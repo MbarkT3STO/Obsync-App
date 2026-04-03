@@ -19,7 +19,7 @@
 
       <div class="sidebar-header">
         <div class="sidebar-brand">
-          <div class="sidebar-logo">
+          <div class="sidebar-logo" id="btn-go-dashboard" role="button" tabindex="0" aria-label="Go to dashboard" title="All Vaults">
             <img src="../../assets/logo.png" alt="Obsync" class="sidebar-logo-img" />
           </div>
           <span class="sidebar-app-name">Obsync</span>
@@ -28,6 +28,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="15 18 9 12 15 6"/>
           </svg>
+          <span class="btn-collapse-label">Collapse</span>
         </button>
       </div>
 
@@ -46,6 +47,15 @@
       <div class="divider"></div>
 
       <div class="sidebar-footer">
+        <button class="btn-nav" id="btn-dashboard-nav" aria-label="All Vaults" data-tooltip="All Vaults">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="7" height="7" rx="1"/>
+          </svg>
+          <span>All Vaults</span>
+        </button>
         <button class="btn-nav" id="btn-settings" aria-label="Settings" data-tooltip="Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="3"/>

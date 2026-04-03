@@ -97,6 +97,8 @@ const btnToggleToken  = $<HTMLButtonElement>('btn-toggle-token');
 const btnAddVault     = $<HTMLButtonElement>('btn-add-vault');
 const btnWelcomeAdd   = $<HTMLButtonElement>('btn-welcome-add');
 const btnSettings     = $<HTMLButtonElement>('btn-settings');
+const btnDashboardNav = $<HTMLButtonElement>('btn-dashboard-nav');
+const btnGoDashboard  = $('btn-go-dashboard');
 const conflictModal   = $('conflict-modal');
 const conflictList    = $<HTMLUListElement>('conflict-list');
 const btnConflictOk   = $<HTMLButtonElement>('btn-conflict-ok');
@@ -167,6 +169,7 @@ function renderVaultList(): void {
   if (!selectedVaultId) {
     showPanel('dashboard');
     renderDashboard();
+    setNavActive('dashboard');
   }
 
   for (const vault of vaults) {
@@ -198,6 +201,7 @@ async function selectVault(vaultId: string): Promise<void> {
 
   renderVaultList();
   showPanel('vault');
+  setNavActive('vault');
 
   vaultNameEl.textContent = vault.name;
   vaultPathEl.textContent = vault.localPath;
@@ -231,6 +235,11 @@ function showPanel(panel: 'welcome' | 'dashboard' | 'vault' | 'settings'): void 
   panelSettings.classList.toggle('hidden', panel !== 'settings');
 }
 
+function setNavActive(active: 'dashboard' | 'vault' | 'settings' | 'none'): void {
+  btnDashboardNav.classList.toggle('active', active === 'dashboard');
+  btnSettings.classList.toggle('active', active === 'settings');
+}
+
 // ── Status ─────────────────────────────────────────────────────────────────
 function setStatus(status: VaultSyncStatus['status'], message?: string): void {
   const labels: Record<VaultSyncStatus['status'], string> = {
@@ -253,6 +262,24 @@ function registerEventListeners(): void {
   btnSettings.addEventListener('click', () => {
     showPanel('settings');
     loadSettings();
+    setNavActive('settings');
+  });
+  btnDashboardNav.addEventListener('click', () => {
+    selectedVaultId = null;
+    renderVaultList();
+    setNavActive('dashboard');
+  });
+  btnGoDashboard.addEventListener('click', () => {
+    selectedVaultId = null;
+    renderVaultList();
+    setNavActive('dashboard');
+  });
+  btnGoDashboard.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      selectedVaultId = null;
+      renderVaultList();
+      setNavActive('dashboard');
+    }
   });
   btnCollapse.addEventListener('click', toggleSidebar);
   btnToggleToken.addEventListener('click', toggleTokenVisibility);
