@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, Menu } from 'electron';
 import path from 'path';
 import { StorageService } from '../services/storage.service';
 import { VaultService } from '../services/vault.service';
@@ -105,6 +105,9 @@ async function runStartupPull(win: BrowserWindow): Promise<void> {
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  // Disable default menu
+  Menu.setApplicationMenu(null);
+
   // Apply auto-start setting from persisted config
   const cfg = storageService.load();
   applyLoginItemSetting(cfg.settings.launchOnStartup ?? true);
