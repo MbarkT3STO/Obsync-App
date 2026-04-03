@@ -6,6 +6,7 @@ export interface AppSettings {
   syncOnStartup: boolean;
   minimizeToTray: boolean;
   startMinimized: boolean;
+  launchOnStartup: boolean;
 }
 
 export interface AppConfig {

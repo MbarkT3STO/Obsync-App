@@ -24,6 +24,20 @@ let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
 let isQuitting = false;
 
+// ── Login item (auto-start) ────────────────────────────────────────────────
+export function applyLoginItemSetting(enabled: boolean): void {
+  if (process.platform === 'linux') return; // not supported on Linux via this API
+
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    openAsHidden: storageService.load().settings.startMinimized,
+    // On Windows, point to the actual exe
+    ...(process.platform === 'win32' ? { path: process.execPath } : {}),
+  });
+
+  logger.info(`Launch on startup: ${enabled}`);
+}
+
 // ── Window ─────────────────────────────────────────────────────────────────
 function createWindow(): BrowserWindow {
   const settings = storageService.load().settings;
@@ -90,6 +104,9 @@ async function runStartupPull(win: BrowserWindow): Promise<void> {
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  // Apply auto-start setting from persisted config
+  const cfg = storageService.load();
+  applyLoginItemSetting(cfg.settings.launchOnStartup ?? true);
   registerIpcHandlers(
     vaultService, githubService, syncService,
     storageService, historyService, autoSyncService,

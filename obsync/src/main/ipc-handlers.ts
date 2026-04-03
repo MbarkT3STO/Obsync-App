@@ -9,6 +9,7 @@ import type { SyncService } from '../services/sync.service';
 import type { StorageService } from '../services/storage.service';
 import type { HistoryService } from '../services/history.service';
 import type { AutoSyncService } from '../services/autosync.service';
+import { applyLoginItemSetting } from './main';
 import { createLogger } from '../utils/logger.util';
 
 const logger = createLogger('IpcHandlers');
@@ -161,7 +162,12 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.SETTINGS_SET, async (_event, settings: Partial<AppSettings>) => {
     const cfg = storageService.load();
-    storageService.update({ settings: { ...cfg.settings, ...settings } });
+    const merged = { ...cfg.settings, ...settings };
+    storageService.update({ settings: merged });
+    // Apply login item whenever launchOnStartup changes
+    if ('launchOnStartup' in settings) {
+      applyLoginItemSetting(merged.launchOnStartup);
+    }
     return reply(true);
   });
 

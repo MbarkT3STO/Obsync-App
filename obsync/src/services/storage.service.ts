@@ -14,6 +14,7 @@ const DEFAULT_CONFIG: AppConfig = {
     syncOnStartup: false,
     minimizeToTray: true,
     startMinimized: false,
+    launchOnStartup: true,
   },
   theme: 'dark',
   version: APP_CONFIG.version,

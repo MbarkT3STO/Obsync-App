@@ -127,8 +127,9 @@ const btnSyncAll      = $<HTMLButtonElement>('btn-sync-all');
 const btnDashboardAdd = $<HTMLButtonElement>('btn-dashboard-add');
 
 // Settings
-const settingSyncStartup   = $<HTMLInputElement>('setting-sync-startup');
-const settingMinimizeTray  = $<HTMLInputElement>('setting-minimize-tray');
+const settingLaunchStartup  = $<HTMLInputElement>('setting-launch-startup');
+const settingSyncStartup    = $<HTMLInputElement>('setting-sync-startup');
+const settingMinimizeTray   = $<HTMLInputElement>('setting-minimize-tray');
 const settingStartMinimized = $<HTMLInputElement>('setting-start-minimized');
 
 // ── Init ───────────────────────────────────────────────────────────────────
@@ -282,6 +283,8 @@ function registerEventListeners(): void {
   btnDashboardAdd.addEventListener('click', handleAddVault);
 
   // Settings
+  settingLaunchStartup.addEventListener('change', () =>
+    window.obsync.settings.set({ launchOnStartup: settingLaunchStartup.checked }));
   settingSyncStartup.addEventListener('change', () =>
     window.obsync.settings.set({ syncOnStartup: settingSyncStartup.checked }));
   settingMinimizeTray.addEventListener('change', () =>
@@ -575,6 +578,7 @@ async function loadSettings(): Promise<void> {
   const res = await window.obsync.settings.get();
   if (!res.success || !res.data) return;
   const s = res.data;
+  settingLaunchStartup.checked  = s.launchOnStartup ?? true;
   settingSyncStartup.checked    = s.syncOnStartup;
   settingMinimizeTray.checked   = s.minimizeToTray;
   settingStartMinimized.checked = s.startMinimized;
