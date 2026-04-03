@@ -11,6 +11,7 @@ interface OAuthConfig {
   authUrl: string;
   tokenUrl: string;
   scopes: string[];
+  extraParams?: Record<string, string>;
 }
 
 export class OAuthService {
@@ -52,10 +53,10 @@ export class OAuthService {
           const redirectUri = `http://127.0.0.1:${port}`;
           
           try {
-            const token = await this.exchangeCodeForToken(config, code, redirectUri);
+            const tokenData = await this.exchangeCodeForToken(config, code, redirectUri);
             res.end('<h1>Authentication Successful!</h1><p>Return to Obsync.</p>');
             server.close();
-            resolve(token);
+            resolve(JSON.stringify(tokenData));
           } catch (err) {
             res.end('<h1>Token Exchange Failed</h1>');
             server.close();
@@ -86,7 +87,7 @@ export class OAuthService {
     });
   }
 
-  private async exchangeCodeForToken(config: OAuthConfig, code: string, redirectUri: string): Promise<string> {
+  private async exchangeCodeForToken(config: OAuthConfig, code: string, redirectUri: string): Promise<any> {
     return new Promise((resolve, reject) => {
       const https = require('https') as typeof import('https');
       const params = new URLSearchParams({
@@ -111,8 +112,16 @@ export class OAuthService {
         res.on('end', () => {
           try {
             const json = JSON.parse(data);
-            if (json.access_token) resolve(json.access_token);
-            else reject(new Error(json.error_description || 'No access token received'));
+            if (json.access_token) {
+              resolve({
+                access_token: json.access_token,
+                refresh_token: json.refresh_token,
+                expires_in: json.expires_in,
+                expires_at: Date.now() + (json.expires_in * 1000)
+              });
+            } else {
+              reject(new Error(json.error_description || 'No access token received'));
+            }
           } catch (e) {
             reject(new Error('Failed to parse token response'));
           }

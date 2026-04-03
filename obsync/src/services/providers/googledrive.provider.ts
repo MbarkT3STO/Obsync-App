@@ -19,7 +19,8 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
 
   async validate(credentials: CloudCredentials): Promise<SyncResult> {
     try {
-      const res = await this.driveApiRequest('GET', 'about?fields=user', credentials.token);
+      const token = await this.getValidToken(credentials);
+      const res = await this.driveApiRequest('GET', 'about?fields=user', token);
       if (res.status === 200) {
         return { success: true, message: 'Google Drive connected' };
       }
@@ -31,9 +32,10 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
 
   async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
+      const token = await this.getValidToken(credentials);
       logger.info(`Starting push to Google Drive for ${vaultPath}`);
       const vaultName = path.basename(vaultPath);
-      const rootFolderId = await this.getOrCreateFolder('root', `Obsync_${vaultName}`, credentials.token);
+      const rootFolderId = await this.getOrCreateFolder('root', `Obsync_${vaultName}`, token);
       
       const files = this.getAllLocalFiles(vaultPath);
       let pushed = 0;
@@ -56,7 +58,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
 
         // Upload file
         const content = fs.readFileSync(filePath);
-        await this.uploadFile(currentParentId, fileName, content, credentials.token, relativePath);
+        await this.uploadFile(currentParentId, fileName, content, token, relativePath);
         pushed++;
       }
 
@@ -69,10 +71,11 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
 
   async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
+      const token = await this.getValidToken(credentials);
       logger.info(`Starting pull from Google Drive to ${vaultPath}`);
       const vaultName = path.basename(vaultPath);
       const q = encodeURIComponent(`name = 'Obsync_${vaultName}' and 'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
-      const rootRes = await this.driveApiRequest('GET', `files?q=${q}&fields=files(id)`, credentials.token);
+      const rootRes = await this.driveApiRequest('GET', `files?q=${q}&fields=files(id)`, token);
       
       if (!rootRes.data.files || rootRes.data.files.length === 0) {
         return { success: true, message: 'Google Drive vault not found' };
@@ -85,7 +88,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
       // Recursive cloud listing and downloading
       const syncFolder = async (folderId: string, currentLocalPath: string) => {
         const query = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
-        const res = await this.driveApiRequest('GET', `files?q=${query}&fields=files(id, name, mimeType, modifiedTime, size)`, credentials.token);
+        const res = await this.driveApiRequest('GET', `files?q=${query}&fields=files(id, name, mimeType, modifiedTime, size)`, token);
         
         for (const file of res.data.files) {
           const localFilePath = path.join(currentLocalPath, file.name);
@@ -109,7 +112,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
 
             if (shouldDownload) {
               logger.info(`Downloading changed file: ${file.name}`);
-              const content = await this.downloadFile(file.id, credentials.token);
+              const content = await this.downloadFile(file.id, token);
               fs.writeFileSync(localFilePath, content);
               pulled++;
             }
@@ -240,7 +243,11 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
           try {
             const json = data ? JSON.parse(data) : {};
             if (res.statusCode && res.statusCode >= 400) {
-              return reject(new Error(`Drive API Error (${res.statusCode}): ${json.error?.message || data}`));
+              let msg = json.error?.message || data;
+              if (res.statusCode === 401) {
+                msg = 'Access expired. Please sign in again in settings to enable auto-refresh.';
+              }
+              return reject(new Error(`Drive API Error (${res.statusCode}): ${msg}`));
             }
             resolve({ status: res.statusCode || 0, data: json });
           } catch (e) {
@@ -294,7 +301,11 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
           try {
             const json = JSON.parse(data || '{}');
             if (res.statusCode && res.statusCode >= 400) {
-              return reject(new Error(`Drive Upload Error (${res.statusCode}): ${json.error?.message || data}`));
+              let msg = json.error?.message || data;
+              if (res.statusCode === 401) {
+                msg = 'Access expired. Please sign in again in settings to enable auto-refresh.';
+              }
+              return reject(new Error(`Drive Upload Error (${res.statusCode}): ${msg}`));
             }
             resolve({ status: res.statusCode || 0, data: json });
           } catch (e) {
@@ -305,6 +316,80 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
 
       req.on('error', reject);
       req.write(multipartBody);
+      req.end();
+    });
+  }
+
+  private async getValidToken(credentials: CloudCredentials): Promise<string> {
+    try {
+      if (!credentials.token) return '';
+      // Diagnostic log (don't log the full token for security, just type/length)
+      const length = credentials.token.length;
+      const isJson = credentials.token.trim().startsWith('{');
+      logger.info(`Processing token (length: ${length}, isJson: ${isJson})`);
+
+      const data = JSON.parse(credentials.token);
+      if (typeof data === 'string') return data; // Legacy support
+
+      // Check if expired
+      const buffer = 60 * 1000; // 1 minute grace period
+      if (data.expires_at && Date.now() < data.expires_at - buffer) {
+        return data.access_token;
+      }
+
+      if (!data.refresh_token) {
+        // We can't refresh without a refresh token, but it might be a long-lived one?
+        // Usually access tokens expire in 1h.
+        return data.access_token;
+      }
+
+      logger.info('Google Drive token expired, refreshing...');
+      const refreshed = await this.refreshOAuthToken(data.refresh_token);
+      
+      // Update original credentials store if possible? 
+      // For now we return the new token and let next syncs do the same if needed.
+      // Ideally we would trigger a persistent update.
+      return refreshed.access_token;
+
+    } catch (e) {
+      // If it's not JSON, assume it's a fixed token
+      return credentials.token;
+    }
+  }
+
+  private async refreshOAuthToken(refreshToken: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const https = require('https') as typeof import('https');
+      const params = new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID || '',
+        client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+        refresh_token: refreshToken,
+        grant_type: 'refresh_token'
+      });
+
+      const options = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Length': params.toString().length
+        }
+      };
+
+      const req = https.request('https://oauth2.googleapis.com/token', options, (res) => {
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            if (json.access_token) resolve(json);
+            else reject(new Error(json.error_description || 'Refresh failed'));
+          } catch (e) {
+            reject(new Error('Failed to parse refresh response'));
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(params.toString());
       req.end();
     });
   }
