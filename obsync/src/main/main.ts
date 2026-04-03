@@ -4,16 +4,20 @@ import { StorageService } from '../services/storage.service';
 import { VaultService } from '../services/vault.service';
 import { GitHubService } from '../services/github.service';
 import { SyncService } from '../services/sync.service';
+import { HistoryService } from '../services/history.service';
+import { AutoSyncService } from '../services/autosync.service';
 import { registerIpcHandlers } from './ipc-handlers';
 import { createLogger } from '../utils/logger.util';
 
 const logger = createLogger('Main');
 
 // Dependency injection composition root
-const storageService = new StorageService();
-const vaultService = new VaultService(storageService);
-const githubService = new GitHubService(storageService);
-const syncService = new SyncService(vaultService, githubService);
+const storageService  = new StorageService();
+const vaultService    = new VaultService(storageService);
+const githubService   = new GitHubService(storageService);
+const syncService     = new SyncService(vaultService, githubService);
+const historyService  = new HistoryService(vaultService, githubService);
+const autoSyncService = new AutoSyncService(storageService, vaultService, syncService);
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -35,11 +39,16 @@ function createWindow(): BrowserWindow {
   win.loadFile(path.join(__dirname, '../../../src/renderer/index.html'));
   win.webContents.openDevTools();
 
+  // Restore auto-sync watchers after window is ready
+  win.webContents.once('did-finish-load', () => {
+    autoSyncService.restoreAll(win);
+  });
+
   return win;
 }
 
 app.whenReady().then(() => {
-  registerIpcHandlers(vaultService, githubService, syncService, storageService);
+  registerIpcHandlers(vaultService, githubService, syncService, storageService, historyService, autoSyncService);
   createWindow();
   logger.info('Obsync started');
 
@@ -49,5 +58,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
+  autoSyncService.stopAll();
   if (process.platform !== 'darwin') app.quit();
 });

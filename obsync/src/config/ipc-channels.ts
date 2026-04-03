@@ -17,6 +17,14 @@ export const IPC = {
   SYNC_STATUS: 'sync:status',
   SYNC_INIT: 'sync:init',
 
+  // History
+  HISTORY_GET: 'history:get',
+  HISTORY_GET_DIFF: 'history:get-diff',
+
+  // Auto-sync
+  AUTOSYNC_SET: 'autosync:set',
+  AUTOSYNC_GET: 'autosync:get',
+
   // Theme
   THEME_SET: 'theme:set',
   THEME_GET: 'theme:get',
@@ -25,4 +33,5 @@ export const IPC = {
   EVENT_SYNC_PROGRESS: 'event:sync-progress',
   EVENT_SYNC_COMPLETE: 'event:sync-complete',
   EVENT_CONFLICT_DETECTED: 'event:conflict-detected',
+  EVENT_AUTOSYNC_TRIGGERED: 'event:autosync-triggered',
 } as const;

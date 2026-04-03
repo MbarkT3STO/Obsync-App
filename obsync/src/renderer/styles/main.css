@@ -967,3 +967,270 @@ html, body {
     max-width: 100%;
   }
 }
+
+/* ── Auto-sync toggle ────────────────────────────────────────── */
+.autosync-section { }
+
+.autosync-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* Toggle switch */
+.switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.switch-track {
+  width: 40px;
+  height: 22px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  transition: background var(--transition), border-color var(--transition);
+  position: relative;
+}
+.switch input:checked ~ .switch-track {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: transform var(--transition), background var(--transition);
+}
+.switch input:checked ~ .switch-track .switch-thumb {
+  transform: translateX(18px);
+  background: #fff;
+}
+
+.autosync-options.hidden { display: none; }
+
+/* ── Wide / tall modal variants ──────────────────────────────── */
+.modal-wide {
+  max-width: 760px;
+  width: 95vw;
+}
+.modal-tall {
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+.modal-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 0;
+}
+
+/* ── History list ────────────────────────────────────────────── */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.history-loading {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px;
+  font-size: 13px;
+}
+
+.history-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px;
+  font-size: 13px;
+}
+
+.commit-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition);
+  border: 1px solid transparent;
+}
+.commit-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+.commit-hash {
+  font-family: 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 2px 7px;
+  border-radius: var(--radius-xs);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.commit-body { min-width: 0; }
+
+.commit-message {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.commit-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.commit-stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 11px;
+}
+
+.stat-added   { color: var(--success); }
+.stat-removed { color: var(--error); }
+.stat-files   { color: var(--text-muted); }
+
+/* ── Diff viewer ─────────────────────────────────────────────── */
+.diff-file-path {
+  font-size: 11px;
+  font-family: 'Consolas', monospace;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.diff-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.diff-legend-item {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-xs);
+}
+.diff-legend-item.added   { background: rgba(62,207,142,0.12); color: var(--success); }
+.diff-legend-item.removed { background: rgba(240,96,96,0.12);  color: var(--error); }
+.diff-legend-item.context { background: var(--bg-elevated); color: var(--text-muted); }
+
+.diff-viewer {
+  flex: 1;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.diff-hunk-header {
+  background: var(--bg-active);
+  color: var(--text-muted);
+  padding: 3px 12px;
+  font-size: 11px;
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+}
+
+.diff-line {
+  display: flex;
+  align-items: flex-start;
+  padding: 0 12px;
+  min-height: 22px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.diff-line-no {
+  min-width: 36px;
+  color: var(--text-muted);
+  user-select: none;
+  flex-shrink: 0;
+  padding-right: 12px;
+  font-size: 11px;
+  padding-top: 1px;
+}
+
+.diff-line-content { flex: 1; }
+
+.diff-line.added   { background: rgba(62,207,142,0.08); color: var(--success); }
+.diff-line.removed { background: rgba(240,96,96,0.08);  color: var(--error); }
+.diff-line.context { color: var(--text-secondary); }
+
+.diff-line.added   .diff-line-no { color: var(--success); opacity: 0.6; }
+.diff-line.removed .diff-line-no { color: var(--error);   opacity: 0.6; }
+
+.diff-empty {
+  padding: 32px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-family: var(--font);
+}
+
+/* Conflict highlight in diff */
+.diff-line.conflict-marker {
+  background: rgba(245,166,35,0.12);
+  color: var(--warning);
+  font-weight: 600;
+}
+
+/* Auto-sync indicator in meta row */
+.autosync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--success);
+  background: var(--success-dim);
+  padding: 2px 8px;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--success);
+}
+.autosync-badge.off {
+  color: var(--text-muted);
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+.autosync-badge svg { width: 10px; height: 10px; }

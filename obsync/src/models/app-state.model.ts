@@ -1,9 +1,11 @@
 import type { Vault, VaultSyncStatus } from './vault.model';
 import type { GitHubConfig } from './github.model';
+import type { AutoSyncConfig } from './history.model';
 
 export interface AppConfig {
   vaults: Vault[];
-  githubConfigs: Record<string, GitHubConfig>; // keyed by vaultId
+  githubConfigs: Record<string, GitHubConfig>;
+  autoSyncConfigs: Record<string, AutoSyncConfig>; // keyed by vaultId
   theme: 'dark' | 'light';
   version: string;
 }

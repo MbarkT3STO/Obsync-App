@@ -9,6 +9,7 @@ const logger = createLogger('StorageService');
 const DEFAULT_CONFIG: AppConfig = {
   vaults: [],
   githubConfigs: {},
+  autoSyncConfigs: {},
   theme: 'dark',
   version: APP_CONFIG.version,
 };

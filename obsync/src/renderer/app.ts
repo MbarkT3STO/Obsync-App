@@ -5,6 +5,7 @@
 
 import type { Vault, VaultSyncStatus } from '../models/vault.model';
 import type { IpcResponse } from '../models/app-state.model';
+import type { CommitEntry, FileDiff, AutoSyncConfig } from '../models/history.model';
 
 // ── Type augmentation for the contextBridge API ────────────────────────────
 declare global {
@@ -31,6 +32,14 @@ interface ObsyncAPI {
     pull(vaultId: string): Promise<IpcResponse<{ message: string }>>;
     getStatus(vaultId: string): Promise<IpcResponse<VaultSyncStatus>>;
   };
+  history: {
+    getCommits(vaultId: string, limit?: number): Promise<IpcResponse<CommitEntry[]>>;
+    getFileDiff(vaultId: string, filePath: string): Promise<IpcResponse<FileDiff>>;
+  };
+  autoSync: {
+    set(vaultId: string, config: AutoSyncConfig): Promise<IpcResponse<void>>;
+    get(vaultId: string): Promise<IpcResponse<AutoSyncConfig>>;
+  };
   theme: {
     get(): Promise<IpcResponse<'dark' | 'light'>>;
     set(theme: 'dark' | 'light'): Promise<IpcResponse<void>>;
@@ -39,11 +48,13 @@ interface ObsyncAPI {
     syncProgress(cb: (status: VaultSyncStatus) => void): void;
     syncComplete(cb: (data: { vaultId: string; result: { success: boolean; message: string } }) => void): void;
     conflictDetected(cb: (data: { vaultId: string; conflicts: Array<{ filePath: string }> }) => void): void;
+    autoSyncTriggered(cb: (data: { vaultId: string }) => void): void;
   };
   off: {
     syncProgress(): void;
     syncComplete(): void;
     conflictDetected(): void;
+    autoSyncTriggered(): void;
   };
 }
 
@@ -84,6 +95,23 @@ const conflictList    = $<HTMLUListElement>('conflict-list');
 const btnConflictOk   = $<HTMLButtonElement>('btn-conflict-ok');
 const themeDarkBtn    = $<HTMLButtonElement>('theme-dark');
 const themeLightBtn   = $<HTMLButtonElement>('theme-light');
+
+// Auto-sync
+const autoSyncToggle   = $<HTMLInputElement>('autosync-toggle');
+const autoSyncOptions  = $('autosync-options');
+const autoSyncDebounce = $<HTMLInputElement>('autosync-debounce');
+
+// History modal
+const historyModal    = $('history-modal');
+const historyList     = $('history-list');
+const btnHistoryClose = $<HTMLButtonElement>('btn-history-close');
+const btnShowHistory  = $<HTMLButtonElement>('btn-show-history');
+
+// Diff modal
+const diffModal       = $('diff-modal');
+const diffViewer      = $('diff-viewer');
+const diffFilePath    = $('diff-file-path');
+const btnDiffClose    = $<HTMLButtonElement>('btn-diff-close');
 
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init(): Promise<void> {
@@ -164,6 +192,9 @@ async function selectVault(vaultId: string): Promise<void> {
     inputBranch.value = 'main';
     inputToken.value = '';
   }
+
+  // Load auto-sync config
+  await loadAutoSyncConfig(vaultId);
 }
 
 // ── Panel Management ───────────────────────────────────────────────────────
@@ -203,6 +234,19 @@ function registerEventListeners(): void {
   btnConflictOk.addEventListener('click', () => conflictModal.classList.add('hidden'));
   themeDarkBtn.addEventListener('click', () => setTheme('dark'));
   themeLightBtn.addEventListener('click', () => setTheme('light'));
+
+  // Auto-sync
+  autoSyncToggle.addEventListener('change', handleAutoSyncToggle);
+  autoSyncDebounce.addEventListener('change', handleAutoSyncDebounceChange);
+
+  // History
+  btnShowHistory.addEventListener('click', handleShowHistory);
+  btnHistoryClose.addEventListener('click', () => historyModal.classList.add('hidden'));
+  btnDiffClose.addEventListener('click', () => diffModal.classList.add('hidden'));
+
+  // Close modals on overlay click
+  historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.add('hidden'); });
+  diffModal.addEventListener('click', (e) => { if (e.target === diffModal) diffModal.classList.add('hidden'); });
 }
 
 function registerIpcListeners(): void {
@@ -231,6 +275,12 @@ function registerIpcListeners(): void {
   window.obsync.on.conflictDetected((data) => {
     if (data.vaultId === selectedVaultId) {
       showConflictModal(data.conflicts);
+    }
+  });
+
+  window.obsync.on.autoSyncTriggered((data) => {
+    if (data.vaultId === selectedVaultId) {
+      showToast('Auto-sync triggered — pushing changes...', 'info');
     }
   });
 }
@@ -343,6 +393,118 @@ async function handleSaveConfig(e: Event): Promise<void> {
     inputToken.value = ''; // Clear token from UI after saving
   } else {
     showToast(initRes.error ?? 'Saved config but init failed', 'warning');
+  }
+}
+
+// ── Auto-sync handlers ─────────────────────────────────────────────────────
+async function loadAutoSyncConfig(vaultId: string): Promise<void> {
+  const res = await window.obsync.autoSync.get(vaultId);
+  if (res.success && res.data) {
+    autoSyncToggle.checked = res.data.enabled;
+    autoSyncDebounce.value = String(res.data.debounceSeconds ?? 30);
+    autoSyncOptions.classList.toggle('hidden', !res.data.enabled);
+  }
+}
+
+async function handleAutoSyncToggle(): Promise<void> {
+  if (!selectedVaultId) return;
+  const enabled = autoSyncToggle.checked;
+  const debounceSeconds = parseInt(autoSyncDebounce.value, 10) || 30;
+  autoSyncOptions.classList.toggle('hidden', !enabled);
+  await window.obsync.autoSync.set(selectedVaultId, { enabled, debounceSeconds });
+  showToast(enabled ? `Auto-sync enabled (${debounceSeconds}s debounce)` : 'Auto-sync disabled', 'info');
+}
+
+async function handleAutoSyncDebounceChange(): Promise<void> {
+  if (!selectedVaultId || !autoSyncToggle.checked) return;
+  const debounceSeconds = parseInt(autoSyncDebounce.value, 10) || 30;
+  await window.obsync.autoSync.set(selectedVaultId, { enabled: true, debounceSeconds });
+}
+
+// ── History handlers ───────────────────────────────────────────────────────
+async function handleShowHistory(): Promise<void> {
+  if (!selectedVaultId) return;
+  historyModal.classList.remove('hidden');
+  historyList.innerHTML = '<div class="history-loading">Loading commits...</div>';
+
+  const res = await window.obsync.history.getCommits(selectedVaultId, 50);
+  if (!res.success || !res.data || res.data.length === 0) {
+    historyList.innerHTML = '<div class="history-empty">No commits yet. Push your vault to see history.</div>';
+    return;
+  }
+
+  historyList.innerHTML = '';
+  for (const commit of res.data) {
+    const item = document.createElement('div');
+    item.className = 'commit-item';
+    item.setAttribute('role', 'button');
+    item.setAttribute('tabindex', '0');
+
+    const date = new Date(commit.date).toLocaleString();
+    const addSign = commit.insertions > 0 ? `<span class="stat-added">+${commit.insertions}</span>` : '';
+    const delSign = commit.deletions > 0 ? `<span class="stat-removed">-${commit.deletions}</span>` : '';
+
+    item.innerHTML = `
+      <span class="commit-hash">${escapeHtml(commit.shortHash)}</span>
+      <div class="commit-body">
+        <div class="commit-message">${escapeHtml(commit.message)}</div>
+        <div class="commit-meta">
+          <span>${escapeHtml(commit.author)}</span>
+          <span>${escapeHtml(date)}</span>
+        </div>
+      </div>
+      <div class="commit-stats">
+        ${addSign}${delSign}
+        <span class="stat-files">${commit.filesChanged} file${commit.filesChanged !== 1 ? 's' : ''}</span>
+      </div>
+    `;
+
+    historyList.appendChild(item);
+  }
+}
+
+async function handleShowDiff(vaultId: string, filePath: string): Promise<void> {
+  diffFilePath.textContent = filePath;
+  diffViewer.innerHTML = '<div class="diff-empty">Loading diff...</div>';
+  diffModal.classList.remove('hidden');
+
+  const res = await window.obsync.history.getFileDiff(vaultId, filePath);
+  if (!res.success || !res.data) {
+    diffViewer.innerHTML = '<div class="diff-empty">Could not load diff for this file.</div>';
+    return;
+  }
+
+  renderDiff(res.data);
+}
+
+function renderDiff(diff: FileDiff): void {
+  if (diff.hunks.length === 0) {
+    diffViewer.innerHTML = '<div class="diff-empty">No differences found.</div>';
+    return;
+  }
+
+  diffViewer.innerHTML = '';
+
+  for (const hunk of diff.hunks) {
+    const hunkHeader = document.createElement('div');
+    hunkHeader.className = 'diff-hunk-header';
+    hunkHeader.textContent = hunk.header;
+    diffViewer.appendChild(hunkHeader);
+
+    for (const line of hunk.lines) {
+      const lineEl = document.createElement('div');
+      const isConflict = line.content.startsWith('<<<<<<<') ||
+                         line.content.startsWith('=======') ||
+                         line.content.startsWith('>>>>>>>');
+      lineEl.className = `diff-line ${line.type}${isConflict ? ' conflict-marker' : ''}`;
+
+      const prefix = line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' ';
+      lineEl.innerHTML = `
+        <span class="diff-line-no">${line.lineNo ?? ''}</span>
+        <span class="diff-line-content">${prefix} ${escapeHtml(line.content)}</span>
+      `;
+      diffViewer.appendChild(lineEl);
+    }
   }
 }
 
