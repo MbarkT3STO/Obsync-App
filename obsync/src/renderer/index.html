@@ -121,7 +121,14 @@
       <div class="panel hidden" id="panel-dashboard">
         <div class="dashboard-header">
           <h1 class="panel-title" style="margin-bottom:0">All Vaults</h1>
-          <div style="display:flex;gap:10px">
+          <div class="header-actions">
+            <div class="search-box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+              </svg>
+              <input type="text" id="dashboard-search" placeholder="Search vaults..." autocomplete="off">
+            </div>
             <button class="btn-secondary" id="btn-sync-all">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polyline points="1 4 1 10 7 10"/>
@@ -444,6 +451,12 @@
 
     </main>
   </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="loading-overlay hidden">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loading-text">Synchronizing...</div>
 </div>
 
 <!-- Toast Container -->

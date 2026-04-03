@@ -142,6 +142,7 @@ const panelDashboard  = $('panel-dashboard');
 const vaultCards      = $('vault-cards');
 const btnSyncAll      = $<HTMLButtonElement>('btn-sync-all');
 const btnDashboardAdd = $<HTMLButtonElement>('btn-dashboard-add');
+const dashboardSearch = $<HTMLInputElement>('dashboard-search');
 const btnMenuTrigger  = $<HTMLButtonElement>('btn-menu-trigger');
 const layout          = document.querySelector('.layout') as HTMLElement;
 
@@ -161,6 +162,8 @@ const settingLaunchStartup  = $<HTMLInputElement>('setting-launch-startup');
 const settingSyncStartup    = $<HTMLInputElement>('setting-sync-startup');
 const settingMinimizeTray   = $<HTMLInputElement>('setting-minimize-tray');
 const settingStartMinimized = $<HTMLInputElement>('setting-start-minimized');
+const loadingOverlay       = $('loading-overlay');
+const loadingText          = $('loading-text');
 
 // ── Custom Select Controls ────────────────────────────────────────────────
 class CustomSelect {
@@ -235,6 +238,7 @@ async function init(): Promise<void> {
   await loadSettings();
   registerEventListeners();
   registerIpcListeners();
+  hideLoading();
 }
 
 function initCustomSelects() {
@@ -481,6 +485,22 @@ function setStatus(status: VaultSyncStatus['status'], message?: string): void {
     const dot = document.querySelector(`[data-vault-status="${selectedVaultId}"]`);
     if (dot) dot.className = `item-status ${status}`;
   }
+
+  // Update card status if on dashboard
+  const cardStatus = document.querySelector(`[data-card-status="${selectedVaultId}"]`);
+  if (cardStatus) {
+    cardStatus.className = `vault-card-status ${status}`;
+    cardStatus.innerHTML = `<span class="vault-card-status-dot"></span> ${labels[status]}`;
+  }
+}
+
+function showLoading(text: string = 'Synchronizing...') {
+  loadingText.textContent = text;
+  loadingOverlay.classList.remove('hidden');
+}
+
+function hideLoading() {
+  loadingOverlay.classList.add('hidden');
 }
 
 // ── Event Listeners ────────────────────────────────────────────────────────
@@ -533,6 +553,7 @@ function registerEventListeners(): void {
 
   btnSyncAll.addEventListener('click', handleSyncAll);
   btnDashboardAdd.addEventListener('click', handleAddVault);
+  dashboardSearch.addEventListener('input', () => renderDashboard(dashboardSearch.value));
 
   settingLaunchStartup.addEventListener('change', () =>
     window.obsync.settings.set({ launchOnStartup: settingLaunchStartup.checked }));
@@ -977,9 +998,23 @@ function showStartupBanner(): void {
   mainPanel?.prepend(banner);
 }
 
-function renderDashboard(): void {
+function renderDashboard(query: string = ''): void {
   vaultCards.innerHTML = '';
-  for (const vault of vaults) {
+  const filteredVaults = vaults.filter(v => 
+    v.name.toLowerCase().includes(query.toLowerCase()) ||
+    v.localPath.toLowerCase().includes(query.toLowerCase())
+  );
+
+  if (filteredVaults.length === 0 && query) {
+    vaultCards.innerHTML = `
+      <div class="empty-state" style="grid-column: 1 / -1; min-height: 30vh">
+        <p>No vaults found matching "${escapeHtml(query)}"</p>
+      </div>
+    `;
+    return;
+  }
+
+  for (const vault of filteredVaults) {
     const card = document.createElement('div');
     card.className = 'vault-card';
     card.setAttribute('role', 'button');
@@ -993,14 +1028,20 @@ function renderDashboard(): void {
       <div class="vault-card-header">
         <div class="vault-card-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
             <polyline points="9 22 9 12 15 12 15 22"/>
           </svg>
         </div>
-        <div style="min-width:0">
+        <div style="min-width:0; flex:1">
           <div class="vault-card-name">${escapeHtml(vault.name)}</div>
           <div class="vault-card-path">${escapeHtml(vault.localPath)}</div>
         </div>
+        <button class="btn-icon btn-card-delete" data-vault-id="${vault.id}" title="Remove Vault" aria-label="Remove Vault">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+        </button>
       </div>
       <div class="vault-card-footer">
         <div class="vault-card-meta">
@@ -1013,27 +1054,70 @@ function renderDashboard(): void {
       </div>
     `;
 
-    card.addEventListener('click', () => selectVault(vault.id));
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('.btn-card-delete')) return;
+      selectVault(vault.id);
+    });
     card.addEventListener('keydown', (e) => { if (e.key === 'Enter') selectVault(vault.id); });
+    
+    const btnDelete = card.querySelector('.btn-card-delete');
+    btnDelete?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleRemoveVaultById(vault.id);
+    });
+
     vaultCards.appendChild(card);
+  }
+}
+
+async function handleRemoveVaultById(vaultId: string): Promise<void> {
+  const vault = vaults.find(v => v.id === vaultId);
+  if (!vault) return;
+
+  const confirmed = confirm(`Remove vault "${vault.name}"? This won't delete your local files.`);
+  if (!confirmed) return;
+
+  showLoading('Removing vault...');
+  const res = await window.obsync.vault.remove(vaultId);
+  hideLoading();
+
+  if (res.success) {
+    vaults = vaults.filter(v => v.id !== vaultId);
+    if (selectedVaultId === vaultId) selectedVaultId = null;
+    renderVaultList();
+    if (vaults.length > 0) {
+      showPanel('dashboard');
+      renderDashboard();
+    } else {
+      showPanel('welcome');
+    }
+    showToast('Vault removed', 'info');
+  } else {
+    showToast(res.error ?? 'Failed to remove vault', 'error');
   }
 }
 
 async function handleSyncAll(): Promise<void> {
   setButtonLoading(btnSyncAll, true);
-  const res = await window.obsync.sync.pullAll();
-  setButtonLoading(btnSyncAll, false);
-
-  if (res.success && res.data) {
-    const ok = res.data.filter(r => r.success).length;
-    const fail = res.data.length - ok;
-    if (fail === 0) {
-      showToast(`All ${ok} vault(s) pulled successfully`, 'success');
-    } else {
-      showToast(`${ok} pulled, ${fail} failed`, 'warning');
+  showLoading('Pulling all vaults...');
+  try {
+    const res = await window.obsync.sync.pullAll();
+    if (res.success && res.data) {
+      const ok = res.data.filter(r => r.success).length;
+      const fail = res.data.length - ok;
+      if (fail === 0) {
+        showToast(`All ${ok} vault(s) pulled successfully`, 'success');
+      } else {
+        showToast(`${ok} pulled, ${fail} failed`, 'warning');
+      }
+      await loadVaults();
+      renderDashboard();
     }
-    await loadVaults();
-    renderDashboard();
+  } catch (err) {
+    showToast('Failed to pull vaults', 'error');
+  } finally {
+    setButtonLoading(btnSyncAll, false);
+    hideLoading();
   }
 }
 
