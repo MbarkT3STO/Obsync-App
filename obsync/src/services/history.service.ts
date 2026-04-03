@@ -23,30 +23,66 @@ export class HistoryService {
 
     try {
       const git = simpleGit({ baseDir: vault.localPath, binary: 'git' });
-      const log = await git.log([
+
+      // Use simple-git's structured log — no custom format string
+      const log = await git.log({ maxCount: limit });
+
+      if (!log.all.length) return [];
+
+      // Get stat info separately via git log --shortstat
+      const statOutput = await git.raw([
+        'log',
         `--max-count=${limit}`,
-        '--stat',
-        '--format=%H|%h|%s|%an|%aI',
+        '--shortstat',
+        '--pretty=format:COMMIT:%H',
       ]);
 
+      // Parse stat output into a map keyed by hash
+      const statMap = this.parseShortStat(statOutput);
+
       return log.all.map(entry => {
-        // simple-git parses diff stat into entry.diff
-        const diff = (entry as unknown as { diff?: { changed?: number; insertions?: number; deletions?: number } }).diff;
+        const stat = statMap.get(entry.hash) ?? { changed: 0, insertions: 0, deletions: 0 };
         return {
           hash: entry.hash,
           shortHash: entry.hash.slice(0, 7),
           message: entry.message,
           author: entry.author_name,
           date: entry.date,
-          filesChanged: diff?.changed ?? 0,
-          insertions: diff?.insertions ?? 0,
-          deletions: diff?.deletions ?? 0,
+          filesChanged: stat.changed,
+          insertions: stat.insertions,
+          deletions: stat.deletions,
         };
       });
     } catch (err) {
       logger.error('Failed to get commit log', err);
       return [];
     }
+  }
+
+  /** Parse `git log --shortstat --pretty=format:COMMIT:%H` output */
+  private parseShortStat(raw: string): Map<string, { changed: number; insertions: number; deletions: number }> {
+    const map = new Map<string, { changed: number; insertions: number; deletions: number }>();
+    let currentHash = '';
+
+    for (const line of raw.split('\n')) {
+      const hashMatch = line.match(/^COMMIT:([a-f0-9]{40})/);
+      if (hashMatch) {
+        currentHash = hashMatch[1]!;
+        continue;
+      }
+      if (!currentHash) continue;
+
+      // e.g. " 3 files changed, 42 insertions(+), 5 deletions(-)"
+      const statMatch = line.match(/(\d+) file.*?(?:,\s*(\d+) insertion.*?)?(?:,\s*(\d+) deletion.*?)?$/);
+      if (statMatch) {
+        map.set(currentHash, {
+          changed:    parseInt(statMatch[1] ?? '0', 10),
+          insertions: parseInt(statMatch[2] ?? '0', 10),
+          deletions:  parseInt(statMatch[3] ?? '0', 10),
+        });
+      }
+    }
+    return map;
   }
 
   async getFileDiff(vaultId: string, filePath: string): Promise<FileDiff | null> {
