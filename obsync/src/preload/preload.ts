@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('obsync', {
     add: (localPath: string) => ipcRenderer.invoke(IPC.VAULT_ADD, localPath),
     remove: (vaultId: string) => ipcRenderer.invoke(IPC.VAULT_REMOVE, vaultId),
     list: () => ipcRenderer.invoke(IPC.VAULT_LIST),
+    clone: (targetPath: string, credentials: GitHubCredentials) =>
+      ipcRenderer.invoke(IPC.VAULT_CLONE, targetPath, credentials),
   },
   github: {
     saveConfig: (vaultId: string, credentials: GitHubCredentials) =>

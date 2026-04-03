@@ -47,6 +47,17 @@ export function registerIpcHandlers(
     }
   });
 
+  ipcMain.handle(IPC.VAULT_CLONE, async (_event, targetPath: string, credentials: GitHubCredentials) => {
+    try {
+      const result = await syncService.clone(targetPath, credentials);
+      return reply(result.success, result.data, result.success ? undefined : result.message);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to clone';
+      logger.error(msg);
+      return reply(false, undefined, msg);
+    }
+  });
+
   ipcMain.handle(IPC.VAULT_REMOVE, async (_event, vaultId: string) => {
     try {
       autoSyncService.stopWatcher(vaultId);

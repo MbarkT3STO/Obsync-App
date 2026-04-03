@@ -5,6 +5,7 @@ export const IPC = {
   VAULT_REMOVE: 'vault:remove',
   VAULT_LIST: 'vault:list',
   VAULT_SELECT_FOLDER: 'vault:select-folder',
+  VAULT_CLONE: 'vault:clone',
 
   // GitHub
   GITHUB_SAVE_CONFIG: 'github:save-config',

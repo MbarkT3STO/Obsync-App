@@ -16,6 +16,7 @@ export interface SyncResult {
   message: string;
   conflicts?: ConflictInfo[];
   filesChanged?: number;
+  data?: any;
 }
 
 export interface ConflictInfo {

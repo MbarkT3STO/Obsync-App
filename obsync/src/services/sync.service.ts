@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron';
 import { createLogger } from '../utils/logger.util';
 import { IPC } from '../config/ipc-channels';
-import type { SyncResult } from '../models/github.model';
+import type { SyncResult, GitHubCredentials } from '../models/github.model';
 import type { VaultSyncStatus } from '../models/vault.model';
 import type { VaultService } from './vault.service';
 import type { GitHubService } from './github.service';
@@ -72,6 +72,21 @@ export class SyncService {
       repoUrl: config.repoUrl,
       branch: config.branch,
     });
+  }
+
+  async clone(targetPath: string, credentials: GitHubCredentials): Promise<SyncResult> {
+    const result = await this.githubService.clone(targetPath, credentials);
+    if (!result.success) return result;
+
+    try {
+      const vault = this.vaultService.add(targetPath);
+      this.githubService.saveConfig(vault.id, credentials);
+      return { success: true, message: 'Vault imported and cloned successfully', data: vault as any };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unknown error';
+      logger.error('Failed to register vault after clone', err);
+      return { success: false, message: `Clone succeeded but failed to register vault: ${msg}` };
+    }
   }
 
   getStatus(vaultId: string): VaultSyncStatus {

@@ -43,13 +43,23 @@
 
       <ul class="vault-list" id="vault-list" role="listbox" aria-label="Vault list"></ul>
 
-      <button class="sidebar-add-btn" id="btn-add-vault" aria-label="Add vault" data-tooltip="Add vault">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="5" x2="12" y2="19"/>
-          <line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-        <span>Add vault</span>
-      </button>
+      <div style="display:flex; flex-direction:column; gap:4px">
+        <button class="sidebar-add-btn" id="btn-add-vault" aria-label="Add vault" data-tooltip="Add vault">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"/>
+            <line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span>Add vault</span>
+        </button>
+        <button class="sidebar-add-btn" id="btn-import-cloud" aria-label="Import from GitHub" data-tooltip="Import from GitHub">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Import from Cloud</span>
+        </button>
+      </div>
 
       <div class="divider"></div>
 
@@ -386,6 +396,55 @@
       <span class="diff-legend-item context">Context</span>
     </div>
     <div class="diff-viewer" id="diff-viewer"></div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay hidden" id="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+  <div class="modal">
+    <h2 id="import-title">Import Vault from GitHub</h2>
+    <p>Enter the repository details and choose a local folder to clone into.</p>
+    
+    <div class="form-group">
+      <label for="import-repo-url">Repository URL</label>
+      <input type="url" id="import-repo-url" placeholder="https://github.com/user/repo.git" />
+    </div>
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="import-branch">Branch</label>
+        <input type="text" id="import-branch" placeholder="main" value="main" />
+      </div>
+      <div class="form-group">
+        <label for="import-token">Personal Access Token</label>
+        <input type="password" id="import-token" placeholder="ghp_xxxxxxxxxxxx" />
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label for="import-local-path">Local Path</label>
+      <div class="input-with-toggle">
+        <input type="text" id="import-local-path" placeholder="Choose an empty folder..." readonly />
+        <button type="button" class="btn-icon" id="btn-import-browse" aria-label="Browse folder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </button>
+      </div>
+      <span class="field-hint">Choose an empty folder where the vault will be cloned.</span>
+    </div>
+
+    <div class="modal-actions" style="margin-top:24px; gap:12px;">
+      <button class="btn-secondary" id="btn-import-cancel">Cancel</button>
+      <button class="btn-primary" id="btn-import-start">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="1 4 1 10 7 10"/>
+          <polyline points="23 20 23 14 17 14"/>
+          <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+        </svg>
+        Start Import
+      </button>
+    </div>
   </div>
 </div>
 

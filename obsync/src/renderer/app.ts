@@ -20,6 +20,7 @@ interface ObsyncAPI {
     add(path: string): Promise<IpcResponse<Vault>>;
     remove(id: string): Promise<IpcResponse<void>>;
     list(): Promise<IpcResponse<Vault[]>>;
+    clone(targetPath: string, credentials: { repoUrl: string; branch: string; token: string }): Promise<IpcResponse<Vault>>;
   };
   github: {
     saveConfig(vaultId: string, creds: { token: string; repoUrl: string; branch: string }): Promise<IpcResponse<void>>;
@@ -129,6 +130,17 @@ const btnSyncAll      = $<HTMLButtonElement>('btn-sync-all');
 const btnDashboardAdd = $<HTMLButtonElement>('btn-dashboard-add');
 const btnMenuTrigger  = $<HTMLButtonElement>('btn-menu-trigger');
 const layout          = document.querySelector('.layout') as HTMLElement;
+
+// Import modal
+const btnImportCloud   = $<HTMLButtonElement>('btn-import-cloud');
+const importModal      = $('import-modal');
+const inputImportRepo  = $<HTMLInputElement>('import-repo-url');
+const inputImportBranch = $<HTMLInputElement>('import-branch');
+const inputImportToken = $<HTMLInputElement>('import-token');
+const inputImportPath  = $<HTMLInputElement>('import-local-path');
+const btnImportBrowse  = $<HTMLButtonElement>('btn-import-browse');
+const btnImportCancel  = $<HTMLButtonElement>('btn-import-cancel');
+const btnImportStart   = $<HTMLButtonElement>('btn-import-start');
 
 // Settings
 const settingLaunchStartup  = $<HTMLInputElement>('setting-launch-startup');
@@ -327,6 +339,62 @@ function registerEventListeners(): void {
 
   // Mobile menu
   btnMenuTrigger.addEventListener('click', toggleMobileSidebar);
+
+  // Import from Cloud logic
+  btnImportCloud.addEventListener('click', () => {
+    importModal.classList.remove('hidden');
+    inputImportRepo.value = '';
+    inputImportBranch.value = 'main';
+    inputImportToken.value = '';
+    inputImportPath.value = '';
+  });
+
+  btnImportBrowse.addEventListener('click', async () => {
+    const res = await window.obsync.vault.selectFolder();
+    if (res.success && res.data) {
+      inputImportPath.value = res.data;
+    }
+  });
+
+  btnImportCancel.addEventListener('click', () => importModal.classList.add('hidden'));
+
+  btnImportStart.addEventListener('click', async () => {
+    const repoUrl = inputImportRepo.value.trim();
+    const branch = inputImportBranch.value.trim() || 'main';
+    const token = inputImportToken.value.trim();
+    const localPath = inputImportPath.value.trim();
+
+    if (!repoUrl || !token || !localPath) {
+      showToast('Please fill all fields', 'error');
+      return;
+    }
+
+    btnImportStart.disabled = true;
+    (btnImportStart.querySelector('span') || btnImportStart).textContent = 'Cloning...';
+    
+    try {
+      const res = await window.obsync.vault.clone(localPath, { repoUrl, branch, token });
+      if (res.success && res.data) {
+        showToast('Vault imported successfully', 'success');
+        importModal.classList.add('hidden');
+        await loadVaults();
+        selectVault(res.data.id);
+      } else {
+        showToast(res.error || 'Failed to import vault', 'error');
+      }
+    } catch (err) {
+      showToast('An unexpected error occurred during import', 'error');
+    } finally {
+      btnImportStart.disabled = false;
+      btnImportStart.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
+          <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+        </svg>
+        Start Import
+      `;
+    }
+  });
 
   // Close sidebar on overlay click
   layout.addEventListener('click', (e) => {

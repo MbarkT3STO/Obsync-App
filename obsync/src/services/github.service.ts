@@ -126,6 +126,32 @@ export class GitHubService {
     }
   }
 
+  async clone(vaultPath: string, credentials: GitHubCredentials): Promise<SyncResult> {
+    try {
+      if (fs.existsSync(vaultPath) && fs.readdirSync(vaultPath).length > 0) {
+        return { success: false, message: 'Target directory is not empty' };
+      }
+      
+      const parentDir = path.dirname(vaultPath);
+      const folderName = path.basename(vaultPath);
+      const git = simpleGit(parentDir);
+      
+      const authUrl = this.buildAuthUrl(credentials.repoUrl, credentials.token);
+      await git.clone(authUrl, folderName, ['--branch', credentials.branch]);
+      
+      // Post-clone config
+      const clonedGit = this.buildGit(vaultPath);
+      await clonedGit.addConfig('user.email', 'obsync@local', false, 'local');
+      await clonedGit.addConfig('user.name', 'Obsync', false, 'local');
+      
+      return { success: true, message: 'Repository cloned successfully' };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Clone failed';
+      logger.error('Clone failed', err);
+      return { success: false, message };
+    }
+  }
+
   async push(vaultPath: string, vaultId: string): Promise<SyncResult> {
     const credentials = this.getCredentials(vaultId);
     if (!credentials) return { success: false, message: 'GitHub not configured for this vault' };
