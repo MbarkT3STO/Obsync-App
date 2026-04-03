@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist/main",
+    "rootDir": "./src"
+  },
+  "include": [
+    "src/main/**/*",
+    "src/preload/**/*",
+    "src/core/**/*",
+    "src/services/**/*",
+    "src/models/**/*",
+    "src/utils/**/*",
+    "src/config/**/*"
+  ]
+}
