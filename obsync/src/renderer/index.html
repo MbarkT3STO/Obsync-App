@@ -8,127 +8,145 @@
   <title>Obsync</title>
   <link rel="stylesheet" href="styles/main.css" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 </head>
 <body>
-  <div id="app">
-    <!-- Title Bar -->
-    <div class="titlebar" id="titlebar">
-      <div class="titlebar-drag"></div>
-      <span class="titlebar-title">Obsync</span>
-      <div class="titlebar-controls">
-        <button class="btn-icon" id="btn-theme-toggle" title="Toggle theme" aria-label="Toggle theme">
+<div id="app">
+  <div class="layout">
+
+    <!-- ── Sidebar ─────────────────────────────────────────── -->
+    <aside class="sidebar" id="sidebar" role="navigation" aria-label="Vaults">
+
+      <div class="sidebar-header">
+        <div class="sidebar-brand">
+          <div class="sidebar-logo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <span class="sidebar-app-name">Obsync</span>
+        </div>
+        <button class="btn-collapse" id="btn-collapse" aria-label="Toggle sidebar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="5"/>
-            <line x1="12" y1="1" x2="12" y2="3"/>
-            <line x1="12" y1="21" x2="12" y2="23"/>
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-            <line x1="1" y1="12" x2="3" y2="12"/>
-            <line x1="21" y1="12" x2="23" y2="12"/>
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            <polyline points="15 18 9 12 15 6"/>
           </svg>
         </button>
       </div>
-    </div>
 
-    <div class="layout">
-      <!-- Sidebar -->
-      <aside class="sidebar" role="navigation" aria-label="Vaults">
-        <div class="sidebar-header">
-          <span class="sidebar-title">Vaults</span>
-          <button class="btn-icon" id="btn-add-vault" title="Add vault" aria-label="Add vault">
+      <div class="sidebar-section-label">Vaults</div>
+
+      <ul class="vault-list" id="vault-list" role="listbox" aria-label="Vault list"></ul>
+
+      <button class="sidebar-add-btn" id="btn-add-vault" aria-label="Add vault" data-tooltip="Add vault">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+        <span>Add vault</span>
+      </button>
+
+      <div class="divider"></div>
+
+      <div class="sidebar-footer">
+        <button class="btn-nav" id="btn-settings" aria-label="Settings" data-tooltip="Settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+          <span>Settings</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- ── Main Panel ──────────────────────────────────────── -->
+    <main class="main-panel" id="main-panel" role="main">
+
+      <!-- Welcome -->
+      <div class="panel" id="panel-welcome">
+        <div class="empty-state">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h2>Welcome to Obsync</h2>
+          <p>Add your Obsidian vault and connect it to a GitHub repository to start syncing your notes.</p>
+          <button class="btn-primary" id="btn-welcome-add">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="12" y1="5" x2="12" y2="19"/>
               <line x1="5" y1="12" x2="19" y2="12"/>
             </svg>
+            Add your first vault
           </button>
         </div>
-        <ul class="vault-list" id="vault-list" role="listbox" aria-label="Vault list"></ul>
-        <div class="sidebar-footer">
-          <button class="btn-nav" id="btn-settings" aria-label="Settings">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </div>
+
+      <!-- Vault Detail -->
+      <div class="panel hidden" id="panel-vault">
+
+        <div class="vault-header">
+          <div class="vault-info">
+            <div class="vault-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </div>
+            <div class="vault-title-group">
+              <h1 class="vault-name" id="vault-name">Vault Name</h1>
+              <p class="vault-path" id="vault-path">/path/to/vault</p>
+            </div>
+          </div>
+          <div class="vault-status-badge" id="vault-status-badge">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-label">Idle</span>
+          </div>
+        </div>
+
+        <div class="vault-meta">
+          <span class="meta-item">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
             </svg>
-            Settings
+            Last synced: <strong id="last-synced">Never</strong>
+          </span>
+        </div>
+
+        <div class="action-bar">
+          <button class="btn-primary" id="btn-push" aria-label="Push changes to GitHub">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16 16 12 12 8 16"/>
+              <line x1="12" y1="12" x2="12" y2="21"/>
+              <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+            Push
+          </button>
+          <button class="btn-secondary" id="btn-pull" aria-label="Pull changes from GitHub">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="8 17 12 21 16 17"/>
+              <line x1="12" y1="12" x2="12" y2="21"/>
+              <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+            </svg>
+            Pull
+          </button>
+          <button class="btn-danger-outline" id="btn-remove-vault" aria-label="Remove vault">
+            Remove
           </button>
         </div>
-      </aside>
 
-      <!-- Main Panel -->
-      <main class="main-panel" id="main-panel" role="main">
-        <!-- Welcome / Empty State -->
-        <div class="panel" id="panel-welcome">
-          <div class="empty-state">
-            <div class="empty-icon">
-              <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.5">
-                <rect x="8" y="8" width="48" height="48" rx="8"/>
-                <path d="M20 32h24M32 20v24"/>
-              </svg>
-            </div>
-            <h2>No vault selected</h2>
-            <p>Add a vault to get started with syncing your Obsidian notes to GitHub.</p>
-            <button class="btn-primary" id="btn-welcome-add">Add your first vault</button>
-          </div>
-        </div>
-
-        <!-- Vault Detail Panel -->
-        <div class="panel hidden" id="panel-vault">
-          <div class="vault-header">
-            <div class="vault-info">
-              <div class="vault-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
-                  <polyline points="9 22 9 12 15 12 15 22"/>
-                </svg>
-              </div>
-              <div>
-                <h1 class="vault-name" id="vault-name">Vault Name</h1>
-                <p class="vault-path" id="vault-path">/path/to/vault</p>
-              </div>
-            </div>
-            <div class="vault-status-badge" id="vault-status-badge">
-              <span class="status-dot" id="status-dot"></span>
-              <span id="status-label">Idle</span>
-            </div>
-          </div>
-
-          <div class="vault-meta">
-            <span class="meta-item">Last synced: <strong id="last-synced">Never</strong></span>
-          </div>
-
-          <!-- Sync Actions -->
-          <div class="action-bar">
-            <button class="btn-primary" id="btn-push" aria-label="Push changes to GitHub">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="16 16 12 12 8 16"/>
-                <line x1="12" y1="12" x2="12" y2="21"/>
-                <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
-              </svg>
-              Push
-            </button>
-            <button class="btn-secondary" id="btn-pull" aria-label="Pull changes from GitHub">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="8 17 12 21 16 17"/>
-                <line x1="12" y1="12" x2="12" y2="21"/>
-                <path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
-              </svg>
-              Pull
-            </button>
-            <button class="btn-danger-outline" id="btn-remove-vault" aria-label="Remove vault">
-              Remove Vault
-            </button>
-          </div>
-
-          <!-- GitHub Config Section -->
-          <section class="config-section" aria-labelledby="github-config-title">
-            <h2 id="github-config-title" class="section-title">GitHub Configuration</h2>
-            <form id="github-form" novalidate>
+        <!-- GitHub Config -->
+        <section class="config-section" aria-labelledby="github-config-title">
+          <h2 id="github-config-title" class="section-title">GitHub Configuration</h2>
+          <form id="github-form" novalidate>
+            <div class="form-grid">
               <div class="form-group">
                 <label for="input-repo-url">Repository URL</label>
-                <input type="url" id="input-repo-url" placeholder="https://github.com/user/repo.git"
+                <input type="url" id="input-repo-url"
+                  placeholder="https://github.com/user/repo.git"
                   autocomplete="off" spellcheck="false" />
               </div>
               <div class="form-group">
@@ -148,53 +166,68 @@
                     </svg>
                   </button>
                 </div>
-                <span class="field-hint">Token is stored encrypted locally and never sent to the renderer.</span>
-              </div>
-              <div class="form-actions">
-                <button type="button" class="btn-secondary" id="btn-validate">Validate</button>
-                <button type="submit" class="btn-primary" id="btn-save-config">Save & Initialize</button>
-              </div>
-            </form>
-          </section>
-        </div>
-
-        <!-- Settings Panel -->
-        <div class="panel hidden" id="panel-settings">
-          <h1 class="panel-title">Settings</h1>
-          <section class="config-section">
-            <h2 class="section-title">Appearance</h2>
-            <div class="setting-row">
-              <span>Theme</span>
-              <div class="toggle-group" role="group" aria-label="Theme selection">
-                <button class="toggle-btn active" data-theme="dark" id="theme-dark">Dark</button>
-                <button class="toggle-btn" data-theme="light" id="theme-light">Light</button>
+                <span class="field-hint">Encrypted locally — never exposed to the UI layer.</span>
               </div>
             </div>
-          </section>
-          <section class="config-section">
-            <h2 class="section-title">About</h2>
-            <p class="about-text">Obsync v1.0.0 — Sync your Obsidian vaults with GitHub.</p>
-          </section>
-        </div>
-      </main>
-    </div>
-  </div>
-
-  <!-- Toast Container -->
-  <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
-
-  <!-- Conflict Modal -->
-  <div class="modal-overlay hidden" id="conflict-modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
-    <div class="modal">
-      <h2 id="conflict-title">Merge Conflicts Detected</h2>
-      <p>The following files have conflicts. Please resolve them manually before syncing again.</p>
-      <ul class="conflict-list" id="conflict-list"></ul>
-      <div class="modal-actions">
-        <button class="btn-primary" id="btn-conflict-ok">Understood</button>
+            <div class="form-actions">
+              <button type="button" class="btn-secondary" id="btn-validate">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                  <polyline points="22 4 12 14.01 9 11.01"/>
+                </svg>
+                Validate
+              </button>
+              <button type="submit" class="btn-primary" id="btn-save-config">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/>
+                  <polyline points="17 21 17 13 7 13 7 21"/>
+                  <polyline points="7 3 7 8 15 8"/>
+                </svg>
+                Save &amp; Initialize
+              </button>
+            </div>
+          </form>
+        </section>
       </div>
+
+      <!-- Settings -->
+      <div class="panel hidden" id="panel-settings">
+        <h1 class="panel-title">Settings</h1>
+        <section class="config-section">
+          <h2 class="section-title">Appearance</h2>
+          <div class="setting-row">
+            <span>Theme</span>
+            <div class="toggle-group" role="group" aria-label="Theme selection">
+              <button class="toggle-btn active" data-theme="dark" id="theme-dark">Dark</button>
+              <button class="toggle-btn" data-theme="light" id="theme-light">Light</button>
+            </div>
+          </div>
+        </section>
+        <section class="config-section">
+          <h2 class="section-title">About</h2>
+          <p class="about-text">Obsync v1.0.0<br>Sync your Obsidian vaults with GitHub securely.</p>
+        </section>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Conflict Modal -->
+<div class="modal-overlay hidden" id="conflict-modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
+  <div class="modal">
+    <h2 id="conflict-title">⚠ Merge Conflicts Detected</h2>
+    <p>The following files have conflicts. Resolve them manually in your editor before syncing again.</p>
+    <ul class="conflict-list" id="conflict-list"></ul>
+    <div class="modal-actions">
+      <button class="btn-primary" id="btn-conflict-ok">Understood</button>
     </div>
   </div>
+</div>
 
-  <script type="module" src="../../dist/renderer/renderer/app.js"></script>
+<script type="module" src="../../dist/renderer/renderer/app.js"></script>
 </body>
 </html>

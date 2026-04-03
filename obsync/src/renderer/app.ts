@@ -54,6 +54,8 @@ let selectedVaultId: string | null = null;
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+const sidebar         = $('sidebar');
+const btnCollapse     = $<HTMLButtonElement>('btn-collapse');
 const vaultList       = $<HTMLUListElement>('vault-list');
 const panelWelcome    = $('panel-welcome');
 const panelVault      = $('panel-vault');
@@ -77,7 +79,6 @@ const btnToggleToken  = $<HTMLButtonElement>('btn-toggle-token');
 const btnAddVault     = $<HTMLButtonElement>('btn-add-vault');
 const btnWelcomeAdd   = $<HTMLButtonElement>('btn-welcome-add');
 const btnSettings     = $<HTMLButtonElement>('btn-settings');
-const btnThemeToggle  = $<HTMLButtonElement>('btn-theme-toggle');
 const conflictModal   = $('conflict-modal');
 const conflictList    = $<HTMLUListElement>('conflict-list');
 const btnConflictOk   = $<HTMLButtonElement>('btn-conflict-ok');
@@ -86,6 +87,7 @@ const themeLightBtn   = $<HTMLButtonElement>('theme-light');
 
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init(): Promise<void> {
+  restoreSidebarState();
   await loadTheme();
   await loadVaults();
   registerEventListeners();
@@ -174,22 +176,15 @@ function showPanel(panel: 'welcome' | 'vault' | 'settings'): void {
 // ── Status ─────────────────────────────────────────────────────────────────
 function setStatus(status: VaultSyncStatus['status'], message?: string): void {
   const labels: Record<VaultSyncStatus['status'], string> = {
-    idle: 'Idle',
-    syncing: 'Syncing...',
-    synced: 'Synced',
-    error: 'Error',
-    conflict: 'Conflict',
+    idle: 'Idle', syncing: 'Syncing...', synced: 'Synced', error: 'Error', conflict: 'Conflict',
   };
-
-  statusDot.className = `status-dot ${status}`;
+  statusDot.className = `status-dot`;
   statusLabel.textContent = message ?? labels[status];
+  statusBadge.className = `vault-status-badge ${status === 'idle' ? '' : status}`;
 
-  // Update sidebar dot
   if (selectedVaultId) {
     const dot = document.querySelector(`[data-vault-status="${selectedVaultId}"]`);
-    if (dot) {
-      dot.className = `item-status ${status}`;
-    }
+    if (dot) dot.className = `item-status ${status}`;
   }
 }
 
@@ -198,7 +193,7 @@ function registerEventListeners(): void {
   btnAddVault.addEventListener('click', handleAddVault);
   btnWelcomeAdd.addEventListener('click', handleAddVault);
   btnSettings.addEventListener('click', () => showPanel('settings'));
-  btnThemeToggle.addEventListener('click', handleThemeToggle);
+  btnCollapse.addEventListener('click', toggleSidebar);
   btnToggleToken.addEventListener('click', toggleTokenVisibility);
   btnRemove.addEventListener('click', handleRemoveVault);
   btnPush.addEventListener('click', handlePush);
@@ -351,12 +346,19 @@ async function handleSaveConfig(e: Event): Promise<void> {
   }
 }
 
-// ── Theme ──────────────────────────────────────────────────────────────────
-async function handleThemeToggle(): Promise<void> {
-  const current = document.documentElement.getAttribute('data-theme') as 'dark' | 'light';
-  await setTheme(current === 'dark' ? 'light' : 'dark');
+// ── Sidebar collapse ───────────────────────────────────────────────────────
+function toggleSidebar(): void {
+  sidebar.classList.toggle('collapsed');
+  localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed') ? '1' : '0');
 }
 
+function restoreSidebarState(): void {
+  if (localStorage.getItem('sidebar-collapsed') === '1') {
+    sidebar.classList.add('collapsed');
+  }
+}
+
+// ── Theme ──────────────────────────────────────────────────────────────────
 async function setTheme(theme: 'dark' | 'light'): Promise<void> {
   applyTheme(theme);
   await window.obsync.theme.set(theme);
