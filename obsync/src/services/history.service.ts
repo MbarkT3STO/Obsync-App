@@ -1,6 +1,6 @@
 import { createLogger } from '../utils/logger.util';
-import type { CommitEntry, FileDiff, DiffHunk, DiffLine } from '../models/history.model';
-import type { GitHubService } from './github.service';
+import type { CommitEntry, FileDiff, DiffHunk } from '../models/history.model';
+import type { CloudProviderService } from './cloud-provider.service';
 import type { VaultService } from './vault.service';
 import simpleGit from 'simple-git';
 import fs from 'fs';
@@ -11,25 +11,22 @@ const logger = createLogger('HistoryService');
 export class HistoryService {
   constructor(
     private readonly vaultService: VaultService,
-    private readonly githubService: GitHubService,
+    private readonly cloudProvider: CloudProviderService,
   ) {}
 
   async getCommits(vaultId: string, limit = 30): Promise<CommitEntry[]> {
     const vault = this.vaultService.getById(vaultId);
-    if (!vault) return [];
+    if (!vault || !fs.existsSync(path.join(vault.localPath, '.git'))) return [];
 
     const gitDir = path.join(vault.localPath, '.git');
     if (!fs.existsSync(gitDir)) return [];
 
     try {
       const git = simpleGit({ baseDir: vault.localPath, binary: 'git' });
-
-      // Use simple-git's structured log — no custom format string
       const log = await git.log({ maxCount: limit });
 
       if (!log.all.length) return [];
 
-      // Get stat info separately via git log --shortstat
       const statOutput = await git.raw([
         'log',
         `--max-count=${limit}`,
@@ -37,7 +34,6 @@ export class HistoryService {
         '--pretty=format:COMMIT:%H',
       ]);
 
-      // Parse stat output into a map keyed by hash
       const statMap = this.parseShortStat(statOutput);
 
       return log.all.map(entry => {
@@ -59,29 +55,25 @@ export class HistoryService {
     }
   }
 
-  /** Parse `git log --shortstat --pretty=format:COMMIT:%H` output */
   private parseShortStat(raw: string): Map<string, { changed: number; insertions: number; deletions: number }> {
     const map = new Map<string, { changed: number; insertions: number; deletions: number }>();
     let currentHash = '';
 
-    for (const line of raw.split('\n')) {
+    raw.split('\n').forEach(line => {
       const hashMatch = line.match(/^COMMIT:([a-f0-9]{40})/);
       if (hashMatch) {
         currentHash = hashMatch[1]!;
-        continue;
+      } else if (currentHash) {
+        const statMatch = line.match(/(\d+) file.*?(?:,\s*(\d+) insertion.*?)?(?:,\s*(\d+) deletion.*?)?$/);
+        if (statMatch) {
+          map.set(currentHash, {
+            changed:    parseInt(statMatch[1] ?? '0', 10),
+            insertions: parseInt(statMatch[2] ?? '0', 10),
+            deletions:  parseInt(statMatch[3] ?? '0', 10),
+          });
+        }
       }
-      if (!currentHash) continue;
-
-      // e.g. " 3 files changed, 42 insertions(+), 5 deletions(-)"
-      const statMatch = line.match(/(\d+) file.*?(?:,\s*(\d+) insertion.*?)?(?:,\s*(\d+) deletion.*?)?$/);
-      if (statMatch) {
-        map.set(currentHash, {
-          changed:    parseInt(statMatch[1] ?? '0', 10),
-          insertions: parseInt(statMatch[2] ?? '0', 10),
-          deletions:  parseInt(statMatch[3] ?? '0', 10),
-        });
-      }
-    }
+    });
     return map;
   }
 
@@ -93,14 +85,11 @@ export class HistoryService {
 
     try {
       const git = simpleGit({ baseDir: vault.localPath, binary: 'git' });
-
-      // Get local content
       let localContent = '';
       if (fs.existsSync(absPath)) {
         localContent = fs.readFileSync(absPath, 'utf-8');
       }
 
-      // Get remote (HEAD) content
       let remoteContent = '';
       try {
         remoteContent = await git.show([`HEAD:${filePath}`]);
@@ -108,9 +97,7 @@ export class HistoryService {
         remoteContent = '';
       }
 
-      // Detect conflict markers in local file
       const hasConflict = localContent.includes('<<<<<<<') && localContent.includes('>>>>>>>');
-
       const hunks = this.computeDiff(remoteContent, localContent);
 
       return {
@@ -132,24 +119,13 @@ export class HistoryService {
     return 'modified';
   }
 
-  /** Minimal line-level diff — produces hunks for the diff viewer */
   private computeDiff(oldText: string, newText: string): DiffHunk[] {
     const oldLines = oldText.split('\n');
     const newLines = newText.split('\n');
     const hunks: DiffHunk[] = [];
-
-    // Simple LCS-based diff
     const lcs = this.lcs(oldLines, newLines);
     let oi = 0, ni = 0, li = 0;
     let currentHunk: DiffHunk | null = null;
-    const CONTEXT = 3;
-
-    const flushHunk = () => {
-      if (currentHunk && currentHunk.lines.length > 0) {
-        hunks.push(currentHunk);
-        currentHunk = null;
-      }
-    };
 
     const ensureHunk = (header: string) => {
       if (!currentHunk) currentHunk = { header, lines: [] };
@@ -157,7 +133,6 @@ export class HistoryService {
 
     while (oi < oldLines.length || ni < newLines.length) {
       if (li < lcs.length && oi === lcs[li]![0] && ni === lcs[li]![1]) {
-        // Context line
         ensureHunk(`@@ context @@`);
         currentHunk!.lines.push({ type: 'context', content: oldLines[oi]!, lineNo: ni + 1 });
         oi++; ni++; li++;
@@ -172,25 +147,19 @@ export class HistoryService {
       }
     }
 
-    flushHunk();
+    if (currentHunk) hunks.push(currentHunk);
     return hunks;
   }
 
-  /** Patience-like LCS returning pairs of matching line indices */
   private lcs(a: string[], b: string[]): [number, number][] {
     const m = a.length, n = b.length;
-    // For large files, limit to avoid O(mn) memory
     if (m * n > 200000) return [];
-
     const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
     for (let i = 1; i <= m; i++) {
       for (let j = 1; j <= n; j++) {
-        dp[i]![j] = a[i - 1] === b[j - 1]
-          ? dp[i - 1]![j - 1]! + 1
-          : Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
+        dp[i]![j] = a[i - 1] === b[j - 1] ? dp[i - 1]![j - 1]! + 1 : Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
       }
     }
-
     const result: [number, number][] = [];
     let i = m, j = n;
     while (i > 0 && j > 0) {

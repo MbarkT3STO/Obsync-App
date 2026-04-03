@@ -56,8 +56,8 @@ export class TrayManager {
         const win = this.getWindow();
         if (!win) return;
         for (const vault of vaults) {
-          const ghConfig = config.githubConfigs[vault.id];
-          if (ghConfig) {
+          const cloudConfig = config.cloudConfigs[vault.id];
+          if (cloudConfig) {
             await this.syncService.push(vault.id, win);
           }
         }

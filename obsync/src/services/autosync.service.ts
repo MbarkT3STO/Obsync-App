@@ -13,6 +13,7 @@ const logger = createLogger('AutoSyncService');
 interface WatcherEntry {
   watcher: FSWatcher;
   debounceTimer: ReturnType<typeof setTimeout> | null;
+  remotePollInterval: ReturnType<typeof setInterval> | null;
   vaultId: string;
 }
 
@@ -35,38 +36,58 @@ export class AutoSyncService {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return;
 
-    logger.info(`Starting file watcher for vault: ${vault.name}`);
+    const intervalSeconds = config.debounceSeconds ?? 30;
+    logger.info(`Starting auto-sync for vault: ${vault.name} (Period: ${intervalSeconds}s)`);
 
+    //── 1. Local Files Watcher (Chokidar) ────────────────────────────────────
     const watcher: FSWatcher = chokidar.watch(vault.localPath, {
       ignored: [
         /(^|[/\\])\../,
         /\.git[/\\]/,
         /node_modules/,
         /\.obsidian[/\\]workspace/,
+        /\.obsidian[/\\]workspace-mobile/,
       ],
       persistent: true,
       ignoreInitial: true,
-      awaitWriteFinish: { stabilityThreshold: 1000, pollInterval: 200 },
+      awaitWriteFinish: { stabilityThreshold: 1500, pollInterval: 200 },
     });
 
-    const entry: WatcherEntry = { watcher, debounceTimer: null, vaultId };
+    const entry: WatcherEntry = { 
+      watcher, 
+      debounceTimer: null, 
+      remotePollInterval: null, 
+      vaultId 
+    };
     this.watchers.set(vaultId, entry);
 
-    const triggerSync = (eventPath: string) => {
-      logger.info(`File change detected: ${eventPath}`);
+    // Trigger local push
+    const triggerLocalPush = (eventPath?: string) => {
       if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
-      const debounceMs = (config.debounceSeconds ?? 30) * 1000;
+      
+      const debounceMs = intervalSeconds * 1000;
       entry.debounceTimer = setTimeout(async () => {
-        logger.info(`Auto-sync triggered for vault ${vaultId}`);
+        logger.info(`Auto-push triggered for vault ${vaultId}`);
         window.webContents.send(IPC.EVENT_AUTOSYNC_TRIGGERED, { vaultId });
-        await this.syncService.push(vaultId, window);
+        await this.syncService.push(vaultId, window, true); // silent=true
       }, debounceMs);
     };
 
-    watcher.on('add', triggerSync);
-    watcher.on('change', triggerSync);
-    watcher.on('unlink', triggerSync);
+    watcher.on('add', () => triggerLocalPush());
+    watcher.on('change', () => triggerLocalPush());
+    watcher.on('unlink', () => triggerLocalPush());
     watcher.on('error', (err) => logger.error('Watcher error', err));
+
+    //── 2. Remote Poller (Periodic Pull) ─────────────────────────────────────
+    // Use the same period as local sync
+    const pollMs = intervalSeconds * 1000;
+    entry.remotePollInterval = setInterval(async () => {
+      logger.info(`Auto-pull check (${intervalSeconds}s) for vault ${vaultId}`);
+      await this.syncService.pull(vaultId, window, true); // silent=true
+    }, pollMs);
+
+    // Initial remote pull when starting watcher
+    this.syncService.pull(vaultId, window, true).catch(() => {});
   }
 
   stopWatcher(vaultId: string): void {
@@ -74,13 +95,15 @@ export class AutoSyncService {
     if (!entry) return;
 
     if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
+    if (entry.remotePollInterval) clearInterval(entry.remotePollInterval);
+    
     entry.watcher.close().catch(() => {});
     this.watchers.delete(vaultId);
-    logger.info(`Stopped file watcher for vault ${vaultId}`);
+    logger.info(`Stopped auto-sync watchers for vault ${vaultId}`);
   }
 
   stopAll(): void {
-    for (const vaultId of this.watchers.keys()) {
+    for (const vaultId of Array.from(this.watchers.keys())) {
       this.stopWatcher(vaultId);
     }
   }

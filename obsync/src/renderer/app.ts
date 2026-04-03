@@ -6,6 +6,7 @@
 import type { Vault, VaultSyncStatus } from '../models/vault.model';
 import type { IpcResponse, AppSettings } from '../models/app-state.model';
 import type { CommitEntry, FileDiff, AutoSyncConfig } from '../models/history.model';
+import type { CloudCredentials, SyncProviderType } from '../models/cloud-sync.model';
 
 // ── Type augmentation for the contextBridge API ────────────────────────────
 declare global {
@@ -20,12 +21,13 @@ interface ObsyncAPI {
     add(path: string): Promise<IpcResponse<Vault>>;
     remove(id: string): Promise<IpcResponse<void>>;
     list(): Promise<IpcResponse<Vault[]>>;
-    clone(targetPath: string, credentials: { repoUrl: string; branch: string; token: string }): Promise<IpcResponse<Vault>>;
+    clone(targetPath: string, credentials: CloudCredentials): Promise<IpcResponse<Vault>>;
   };
-  github: {
-    saveConfig(vaultId: string, creds: { token: string; repoUrl: string; branch: string }): Promise<IpcResponse<void>>;
-    getConfig(vaultId: string): Promise<IpcResponse<{ repoUrl: string; branch: string }>>;
-    validate(creds: { token: string; repoUrl: string; branch: string }): Promise<IpcResponse<boolean>>;
+  cloud: {
+    saveConfig(vaultId: string, creds: CloudCredentials): Promise<IpcResponse<void>>;
+    getConfig(vaultId: string): Promise<IpcResponse<{ provider: SyncProviderType; meta: Record<string, any> }>>;
+    validate(creds: CloudCredentials): Promise<IpcResponse<boolean>>;
+    signIn(provider: SyncProviderType): Promise<IpcResponse<string>>;
   };
   sync: {
     init(vaultId: string): Promise<IpcResponse<void>>;
@@ -69,6 +71,8 @@ interface ObsyncAPI {
 // ── State ──────────────────────────────────────────────────────────────────
 let vaults: Vault[] = [];
 let selectedVaultId: string | null = null;
+let currentProvider: SyncProviderType = 'github';
+let currentImportProvider: SyncProviderType = 'github';
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -88,7 +92,7 @@ const statusBadge     = $('vault-status-badge');
 const btnPush         = $<HTMLButtonElement>('btn-push');
 const btnPull         = $<HTMLButtonElement>('btn-pull');
 const btnRemove       = $<HTMLButtonElement>('btn-remove-vault');
-const githubForm      = $<HTMLFormElement>('github-form');
+const cloudForm       = $<HTMLFormElement>('cloud-form');
 const inputRepoUrl    = $<HTMLInputElement>('input-repo-url');
 const inputBranch     = $<HTMLInputElement>('input-branch');
 const inputToken      = $<HTMLInputElement>('input-token');
@@ -110,6 +114,16 @@ const themeLightBtn   = $<HTMLButtonElement>('theme-light');
 const autoSyncToggle   = $<HTMLInputElement>('autosync-toggle');
 const autoSyncOptions  = $('autosync-options');
 const autoSyncDebounce = $<HTMLInputElement>('autosync-debounce');
+
+// Config labels
+const labelRepoUrl  = $('label-repo-url');
+const labelBranch   = $('label-branch');
+const labelToken    = $('label-token');
+const importLabelUrl = $('import-label-url');
+const importLabelBranch = $('import-label-branch');
+const importLabelToken = $('import-label-token');
+const btnOAuthSignIn  = $<HTMLButtonElement>('btn-oauth-signin');
+const btnImportOAuth  = $<HTMLButtonElement>('btn-import-oauth');
 
 // History modal
 const historyModal    = $('history-modal');
@@ -148,14 +162,212 @@ const settingSyncStartup    = $<HTMLInputElement>('setting-sync-startup');
 const settingMinimizeTray   = $<HTMLInputElement>('setting-minimize-tray');
 const settingStartMinimized = $<HTMLInputElement>('setting-start-minimized');
 
+// ── Custom Select Controls ────────────────────────────────────────────────
+class CustomSelect {
+  private element: HTMLElement;
+  private trigger: HTMLElement;
+  private displayText: HTMLElement;
+  private displayIcon: HTMLElement;
+  private options: HTMLElement;
+  private currentValue: string = 'github';
+  private onChange?: (value: string) => void;
+
+  constructor(id: string, onChange?: (val: string) => void) {
+    this.element = $(id);
+    this.trigger = this.element.querySelector('.custom-select-trigger') as HTMLElement;
+    this.displayText = this.element.querySelector('.provider-display-text') as HTMLElement;
+    this.displayIcon = this.element.querySelector('.provider-display-icon') as HTMLElement;
+    this.options = this.element.querySelector('.custom-select-options') as HTMLElement;
+    this.onChange = onChange;
+
+    this.trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.toggle();
+    });
+
+    this.element.querySelectorAll('.custom-option').forEach(opt => {
+      opt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const val = (opt as HTMLElement).dataset['value'] || 'github';
+        this.setValue(val);
+        this.close();
+      });
+    });
+
+    document.addEventListener('click', () => this.close());
+  }
+
+  toggle() {
+    this.element.classList.toggle('open');
+  }
+
+  close() {
+    this.element.classList.remove('open');
+  }
+
+  setValue(val: string) {
+    this.currentValue = val;
+    const opt = this.element.querySelector(`.custom-option[data-value="${val}"]`) as HTMLElement;
+    if (opt) {
+      this.displayText.textContent = opt.querySelector('span')?.textContent || '';
+      this.displayIcon.innerHTML = opt.querySelector('.custom-option-icon')?.innerHTML || '';
+
+      this.element.querySelectorAll('.custom-option').forEach(o => o.classList.remove('selected'));
+      opt.classList.add('selected');
+    }
+    if (this.onChange) this.onChange(val);
+  }
+
+  getValue(): string {
+    return this.currentValue;
+  }
+}
+
+let providerSelect: CustomSelect;
+let importProviderSelect: CustomSelect;
+
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init(): Promise<void> {
   restoreSidebarState();
   await loadTheme();
+  initCustomSelects();
   await loadVaults();
   await loadSettings();
   registerEventListeners();
   registerIpcListeners();
+}
+
+function initCustomSelects() {
+  providerSelect = new CustomSelect('provider-dropdown', (val) => {
+    currentProvider = val as SyncProviderType;
+    updateLabel(val as SyncProviderType, labelRepoUrl, labelBranch, inputRepoUrl, inputBranch, labelToken, inputToken, btnOAuthSignIn);
+  });
+  importProviderSelect = new CustomSelect('import-dropdown', (val) => {
+    currentImportProvider = val as SyncProviderType;
+    updateLabel(val as SyncProviderType, importLabelUrl, importLabelBranch, inputImportRepo, inputImportBranch, importLabelToken, inputImportToken, btnImportOAuth);
+  });
+
+  providerSelect.setValue('github');
+  importProviderSelect.setValue('github');
+}
+
+function getProviderMeta(provider: SyncProviderType) {
+  switch (provider) {
+    case 'github':
+    case 'gitlab':
+    case 'bitbucket':
+    case 'git-custom':
+      return { 
+        urlLabel: 'Repository URL', 
+        urlPlaceholder: 'https://github.com/user/repo.git',
+        branchLabel: 'Branch',
+        branchPlaceholder: 'main',
+        hideBranch: false,
+        tokenLabel: 'Access Token / Password',
+        tokenPlaceholder: 'Enter token or password',
+        useOAuth: false,
+        isGit: true,
+        hideUrl: false
+      };
+    case 'dropbox':
+    case 'googledrive':
+    case 'onedrive':
+      return {
+        urlLabel: 'Cloud Folder Path',
+        urlPlaceholder: '/My Vault (optional)',
+        branchLabel: '',
+        branchPlaceholder: '',
+        hideBranch: true,
+        tokenLabel: 'Access Token / App Key',
+        tokenPlaceholder: 'Enter your access token',
+        useOAuth: true,
+        isGit: false,
+        hideUrl: true
+      };
+    case 'webdav':
+      return {
+        urlLabel: 'WebDAV Server URL',
+        urlPlaceholder: 'https://nextcloud.com/remote.php/dav/files/user/',
+        branchLabel: '',
+        branchPlaceholder: '',
+        hideBranch: true,
+        tokenLabel: 'Password / App Token',
+        tokenPlaceholder: 'Your WebDAV password',
+        useOAuth: false,
+        isGit: false
+      };
+    case 's3':
+      return {
+        urlLabel: 'S3 Bucket Name',
+        urlPlaceholder: 'my-obsidian-vault',
+        branchLabel: 'AWS Region',
+        branchPlaceholder: 'us-east-1',
+        hideBranch: false,
+        tokenLabel: 'Access Key:Secret Key',
+        tokenPlaceholder: 'AKIA...:SECRET...',
+        useOAuth: false,
+        isGit: false
+      };
+    default:
+      return { 
+        urlLabel: 'Server URL', 
+        urlPlaceholder: '', 
+        branchLabel: 'Branch', 
+        branchPlaceholder: '', 
+        hideBranch: false,
+        tokenLabel: 'Access Token / Password',
+        tokenPlaceholder: 'Enter token or password',
+        useOAuth: false,
+        isGit: false
+      };
+  }
+}
+
+function updateLabel(
+  provider: SyncProviderType,
+  labelUrl: HTMLElement | null,
+  labelBranch: HTMLElement | null,
+  inputUrl: HTMLInputElement | null,
+  inputBranch: HTMLInputElement | null,
+  labelToken?: HTMLElement | null,
+  inputToken?: HTMLInputElement | null,
+  btnOAuth?: HTMLButtonElement | null
+) {
+  if (!labelUrl || !labelBranch || !inputUrl || !inputBranch) return;
+  const meta = getProviderMeta(provider);
+  labelUrl.textContent = meta.urlLabel;
+  inputUrl.placeholder = meta.urlPlaceholder;
+
+  if (meta.hideUrl) {
+    labelUrl.parentElement?.classList.add('hidden');
+  } else {
+    labelUrl.parentElement?.classList.remove('hidden');
+  }
+  
+  if (meta.hideBranch) {
+    labelBranch.parentElement?.classList.add('hidden');
+  } else {
+    labelBranch.parentElement?.classList.remove('hidden');
+    labelBranch.textContent = meta.branchLabel;
+    inputBranch.placeholder = meta.branchPlaceholder;
+  }
+
+  if (labelToken && meta.tokenLabel) {
+    labelToken.textContent = meta.tokenLabel;
+  }
+  if (inputToken && meta.tokenPlaceholder) {
+    inputToken.placeholder = meta.tokenPlaceholder;
+  }
+
+  if (btnOAuth) {
+    if (meta.useOAuth) {
+      btnOAuth.classList.remove('hidden');
+      const span = btnOAuth.querySelector('span');
+      if (span) span.textContent = `Sign in with ${provider.charAt(0).toUpperCase() + provider.slice(1)}`;
+    } else {
+      btnOAuth.classList.add('hidden');
+    }
+  }
 }
 
 async function loadTheme(): Promise<void> {
@@ -179,7 +391,6 @@ function renderVaultList(): void {
     return;
   }
 
-  // Show dashboard if no vault is selected
   if (!selectedVaultId) {
     showPanel('dashboard');
     renderDashboard();
@@ -196,7 +407,7 @@ function renderVaultList(): void {
 
     li.innerHTML = `
       <svg class="item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
         <polyline points="9 22 9 12 15 12 15 22"/>
       </svg>
       <span class="item-name">${escapeHtml(vault.name)}</span>
@@ -228,19 +439,19 @@ async function selectVault(vaultId: string): Promise<void> {
 
   setStatus('idle');
 
-  // Load GitHub config (without token)
-  const configRes = await window.obsync.github.getConfig(vaultId);
+  // Load Cloud config
+  const configRes = await window.obsync.cloud.getConfig(vaultId);
   if (configRes.success && configRes.data) {
-    inputRepoUrl.value = configRes.data.repoUrl;
-    inputBranch.value = configRes.data.branch;
-    inputToken.value = '';
+    providerSelect.setValue(configRes.data.provider);
+    inputRepoUrl.value = configRes.data.meta?.repoUrl || '';
+    inputBranch.value = configRes.data.meta?.branch || 'main';
   } else {
+    providerSelect.setValue('github');
     inputRepoUrl.value = '';
     inputBranch.value = 'main';
-    inputToken.value = '';
   }
+  inputToken.value = '';
 
-  // Load auto-sync config
   await loadAutoSyncConfig(vaultId);
 }
 
@@ -305,29 +516,24 @@ function registerEventListeners(): void {
   btnPush.addEventListener('click', handlePush);
   btnPull.addEventListener('click', handlePull);
   btnValidate.addEventListener('click', handleValidate);
-  githubForm.addEventListener('submit', handleSaveConfig);
+  cloudForm.addEventListener('submit', handleSaveConfig);
   btnConflictOk.addEventListener('click', () => conflictModal.classList.add('hidden'));
   themeDarkBtn.addEventListener('click', () => setTheme('dark'));
   themeLightBtn.addEventListener('click', () => setTheme('light'));
 
-  // Auto-sync
   autoSyncToggle.addEventListener('change', handleAutoSyncToggle);
   autoSyncDebounce.addEventListener('change', handleAutoSyncDebounceChange);
 
-  // History
   btnShowHistory.addEventListener('click', handleShowHistory);
   btnHistoryClose.addEventListener('click', () => historyModal.classList.add('hidden'));
   btnDiffClose.addEventListener('click', () => diffModal.classList.add('hidden'));
 
-  // Close modals on overlay click
   historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.add('hidden'); });
   diffModal.addEventListener('click', (e) => { if (e.target === diffModal) diffModal.classList.add('hidden'); });
 
-  // Dashboard
   btnSyncAll.addEventListener('click', handleSyncAll);
   btnDashboardAdd.addEventListener('click', handleAddVault);
 
-  // Settings
   settingLaunchStartup.addEventListener('change', () =>
     window.obsync.settings.set({ launchOnStartup: settingLaunchStartup.checked }));
   settingSyncStartup.addEventListener('change', () =>
@@ -337,12 +543,11 @@ function registerEventListeners(): void {
   settingStartMinimized.addEventListener('change', () =>
     window.obsync.settings.set({ startMinimized: settingStartMinimized.checked }));
 
-  // Mobile menu
   btnMenuTrigger.addEventListener('click', toggleMobileSidebar);
 
-  // Import from Cloud logic
   btnImportCloud.addEventListener('click', () => {
     importModal.classList.remove('hidden');
+    importProviderSelect.setValue('github');
     inputImportRepo.value = '';
     inputImportBranch.value = 'main';
     inputImportToken.value = '';
@@ -359,13 +564,15 @@ function registerEventListeners(): void {
   btnImportCancel.addEventListener('click', () => importModal.classList.add('hidden'));
 
   btnImportStart.addEventListener('click', async () => {
+    const provider = importProviderSelect.getValue() as SyncProviderType;
     const repoUrl = inputImportRepo.value.trim();
     const branch = inputImportBranch.value.trim() || 'main';
     const token = inputImportToken.value.trim();
     const localPath = inputImportPath.value.trim();
 
-    if (!repoUrl || !token || !localPath) {
-      showToast('Please fill all fields', 'error');
+    const meta = getProviderMeta(provider);
+    if (!token || !localPath || (meta.isGit && !repoUrl)) {
+      showToast(meta.isGit ? 'Please fill all fields' : 'Token and Local Path are required', 'error');
       return;
     }
 
@@ -373,7 +580,11 @@ function registerEventListeners(): void {
     (btnImportStart.querySelector('span') || btnImportStart).textContent = 'Cloning...';
     
     try {
-      const res = await window.obsync.vault.clone(localPath, { repoUrl, branch, token });
+      const res = await window.obsync.vault.clone(localPath, { 
+        provider, 
+        token, 
+        meta: { repoUrl, branch } 
+      });
       if (res.success && res.data) {
         showToast('Vault imported successfully', 'success');
         importModal.classList.add('hidden');
@@ -396,12 +607,35 @@ function registerEventListeners(): void {
     }
   });
 
-  // Close sidebar on overlay click
   layout.addEventListener('click', (e) => {
     if (layout.classList.contains('sidebar-open') && e.target === layout) {
       closeMobileSidebar();
     }
   });
+
+  const handleOAuth = async (isImport: boolean) => {
+    const provider = isImport ? importProviderSelect.getValue() : providerSelect.getValue();
+    const tokenInput = isImport ? inputImportToken : inputToken;
+    const btn = isImport ? btnImportOAuth : btnOAuthSignIn;
+
+    setButtonLoading(btn, true);
+    try {
+      const res = await window.obsync.cloud.signIn(provider as SyncProviderType);
+      if (res.success && res.data) {
+        tokenInput.value = res.data;
+        showToast(`Successfully signed in with ${provider.charAt(0).toUpperCase() + provider.slice(1)}`, 'success');
+      } else {
+        showToast(res.error || 'Sign in failed', 'error');
+      }
+    } catch (err) {
+      showToast('An error occurred during sign in', 'error');
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  };
+
+  btnOAuthSignIn.addEventListener('click', () => handleOAuth(false));
+  btnImportOAuth.addEventListener('click', () => handleOAuth(true));
 }
 
 function toggleMobileSidebar(): void {
@@ -425,7 +659,6 @@ function registerIpcListeners(): void {
     if (data.vaultId === selectedVaultId) {
       const type = data.result.success ? 'success' : 'error';
       showToast(data.result.message, type);
-      // Refresh vault list to update lastSyncedAt
       loadVaults().then(() => {
         const vault = vaults.find(v => v.id === data.vaultId);
         if (vault) {
@@ -453,7 +686,7 @@ function registerIpcListeners(): void {
     const banner = document.getElementById('startup-banner');
     if (banner) {
       const allOk = results.every(r => r.success);
-      banner.className = `startup-banner ${allOk ? 'done' : 'done'}`;
+      banner.className = `startup-banner done`;
       banner.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="20 6 9 17 4 12"/>
@@ -466,7 +699,6 @@ function registerIpcListeners(): void {
   });
 }
 
-// ── Handlers ───────────────────────────────────────────────────────────────
 async function handleAddVault(): Promise<void> {
   const folderRes = await window.obsync.vault.selectFolder();
   if (!folderRes.success || !folderRes.data) return;
@@ -524,17 +756,31 @@ async function handlePull(): Promise<void> {
 }
 
 async function handleValidate(): Promise<void> {
+  const provider = providerSelect.getValue() as SyncProviderType;
   const token = inputToken.value.trim();
   const repoUrl = inputRepoUrl.value.trim();
   const branch = inputBranch.value.trim() || 'main';
 
-  if (!token || !repoUrl) {
-    showToast('Please fill in the repository URL and token', 'warning');
+  const meta = getProviderMeta(provider);
+
+  if (!token) {
+    showToast('Token / Password is required', 'warning');
     return;
   }
 
+  if (meta.isGit) {
+    if (!repoUrl) {
+      showToast('Error: Repository URL is mandatory for Git providers.', 'warning');
+      return;
+    }
+  }
+
   setButtonLoading(btnValidate, true);
-  const res = await window.obsync.github.validate({ token, repoUrl, branch });
+  const res = await window.obsync.cloud.validate({ 
+    provider, 
+    token, 
+    meta: { repoUrl, branch } 
+  });
   setButtonLoading(btnValidate, false);
 
   if (res.success) {
@@ -548,23 +794,30 @@ async function handleSaveConfig(e: Event): Promise<void> {
   e.preventDefault();
   if (!selectedVaultId) return;
 
+  const provider = providerSelect.getValue() as SyncProviderType;
   const token = inputToken.value.trim();
   const repoUrl = inputRepoUrl.value.trim();
   const branch = inputBranch.value.trim() || 'main';
 
-  if (!repoUrl) {
-    showToast('Repository URL is required', 'warning');
+  const meta = getProviderMeta(provider);
+
+  if (meta.isGit && !repoUrl) {
+    showToast('Error: Repository URL is mandatory for Git providers.', 'warning');
     return;
   }
 
   if (!token) {
-    showToast('Personal Access Token is required', 'warning');
+    showToast('Access token / password is required', 'warning');
     return;
   }
 
   setButtonLoading(btnSaveConfig, true);
 
-  const saveRes = await window.obsync.github.saveConfig(selectedVaultId, { token, repoUrl, branch });
+  const saveRes = await window.obsync.cloud.saveConfig(selectedVaultId, { 
+    provider, 
+    token, 
+    meta: { repoUrl, branch } 
+  });
   if (!saveRes.success) {
     showToast(saveRes.error ?? 'Failed to save config', 'error');
     setButtonLoading(btnSaveConfig, false);
@@ -576,13 +829,12 @@ async function handleSaveConfig(e: Event): Promise<void> {
 
   if (initRes.success) {
     showToast('Configuration saved and repository initialized', 'success');
-    inputToken.value = ''; // Clear token from UI after saving
+    inputToken.value = '';
   } else {
     showToast(initRes.error ?? 'Saved config but init failed', 'warning');
   }
 }
 
-// ── Auto-sync handlers ─────────────────────────────────────────────────────
 async function loadAutoSyncConfig(vaultId: string): Promise<void> {
   const res = await window.obsync.autoSync.get(vaultId);
   if (res.success && res.data) {
@@ -607,7 +859,6 @@ async function handleAutoSyncDebounceChange(): Promise<void> {
   await window.obsync.autoSync.set(selectedVaultId, { enabled: true, debounceSeconds });
 }
 
-// ── History handlers ───────────────────────────────────────────────────────
 async function handleShowHistory(): Promise<void> {
   if (!selectedVaultId) return;
   historyModal.classList.remove('hidden');
@@ -694,7 +945,6 @@ function renderDiff(diff: FileDiff): void {
   }
 }
 
-// ── Settings ───────────────────────────────────────────────────────────────
 async function loadSettings(): Promise<void> {
   const res = await window.obsync.settings.get();
   if (!res.success || !res.data) return;
@@ -704,7 +954,6 @@ async function loadSettings(): Promise<void> {
   settingMinimizeTray.checked   = s.minimizeToTray;
   settingStartMinimized.checked = s.startMinimized;
 
-  // Show startup pull banner if syncOnStartup is on
   if (s.syncOnStartup) {
     showStartupBanner();
   }
@@ -724,12 +973,10 @@ function showStartupBanner(): void {
     </svg>
     Pulling latest changes from all vaults...
   `;
-  // Insert at top of main panel
   const mainPanel = document.getElementById('main-panel');
   mainPanel?.prepend(banner);
 }
 
-// ── Dashboard ──────────────────────────────────────────────────────────────
 function renderDashboard(): void {
   vaultCards.innerHTML = '';
   for (const vault of vaults) {
@@ -790,7 +1037,6 @@ async function handleSyncAll(): Promise<void> {
   }
 }
 
-// ── Sidebar collapse ───────────────────────────────────────────────────────
 function toggleSidebar(): void {
   sidebar.classList.toggle('collapsed');
   localStorage.setItem('sidebar-collapsed', sidebar.classList.contains('collapsed') ? '1' : '0');
@@ -802,7 +1048,6 @@ function restoreSidebarState(): void {
   }
 }
 
-// ── Theme ──────────────────────────────────────────────────────────────────
 async function setTheme(theme: 'dark' | 'light'): Promise<void> {
   applyTheme(theme);
   await window.obsync.theme.set(theme);
@@ -814,7 +1059,6 @@ function applyTheme(theme: 'dark' | 'light'): void {
   themeLightBtn.classList.toggle('active', theme === 'light');
 }
 
-// ── Conflict Modal ─────────────────────────────────────────────────────────
 function showConflictModal(conflicts: Array<{ filePath: string }>): void {
   conflictList.innerHTML = '';
   for (const c of conflicts) {
@@ -825,7 +1069,6 @@ function showConflictModal(conflicts: Array<{ filePath: string }>): void {
   conflictModal.classList.remove('hidden');
 }
 
-// ── Toast ──────────────────────────────────────────────────────────────────
 const TOAST_ICONS: Record<string, string> = {
   success: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`,
   error:   `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
@@ -846,7 +1089,6 @@ function showToast(message: string, type: 'success' | 'error' | 'warning' | 'inf
   }, 3500);
 }
 
-// ── Helpers ────────────────────────────────────────────────────────────────
 function toggleTokenVisibility(): void {
   inputToken.type = inputToken.type === 'password' ? 'text' : 'password';
 }
@@ -865,5 +1107,4 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
-// ── Bootstrap ──────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => { init(); });

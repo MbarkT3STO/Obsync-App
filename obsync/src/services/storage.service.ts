@@ -8,7 +8,7 @@ const logger = createLogger('StorageService');
 
 const DEFAULT_CONFIG: AppConfig = {
   vaults: [],
-  githubConfigs: {},
+  cloudConfigs: {},
   autoSyncConfigs: {},
   settings: {
     syncOnStartup: false,
@@ -45,7 +45,43 @@ export class StorageService {
         return this.cache;
       }
       const raw = fs.readFileSync(this.configPath, 'utf-8');
-      this.cache = { ...DEFAULT_CONFIG, ...JSON.parse(raw) } as AppConfig;
+      const data = JSON.parse(raw);
+
+      // ── Migration: githubConfigs → cloudConfigs ───────────────────────────────
+      if (data.githubConfigs && !data.cloudConfigs) {
+        data.cloudConfigs = {};
+        for (const [id, cfg] of Object.entries(data.githubConfigs)) {
+          const old = cfg as any;
+          (data.cloudConfigs as any)[id] = { 
+            provider: 'github',
+            encryptedToken: old.encryptedToken,
+            meta: {
+              repoUrl: old.repoUrl,
+              branch: old.branch || 'main'
+            }
+          };
+        }
+        delete data.githubConfigs;
+        logger.info('Migrated legacy GitHub configs to new Cloud Metadata format');
+      }
+
+      // ── Migration: cloudConfigs v1 -> v2 (Moving top-level fields to meta) ─────
+      if (data.cloudConfigs) {
+        for (const id of Object.keys(data.cloudConfigs)) {
+          const cfg = data.cloudConfigs[id];
+          if (cfg.repoUrl || cfg.branch) {
+             cfg.meta = {
+                repoUrl: cfg.repoUrl,
+                branch: cfg.branch || 'main',
+                ...cfg.meta
+             };
+             delete cfg.repoUrl;
+             delete cfg.branch;
+          }
+        }
+      }
+
+      this.cache = { ...DEFAULT_CONFIG, ...data } as AppConfig;
       return this.cache;
     } catch (err) {
       logger.error('Failed to load config, using defaults', err);

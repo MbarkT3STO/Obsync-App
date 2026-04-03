@@ -1,14 +1,16 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../config/ipc-channels';
 import type { IpcResponse, AppSettings } from '../models/app-state.model';
-import type { GitHubCredentials } from '../models/github.model';
+import type { CloudCredentials } from '../models/cloud-sync.model';
 import type { AutoSyncConfig } from '../models/history.model';
 import type { VaultService } from '../services/vault.service';
-import type { GitHubService } from '../services/github.service';
+import type { CloudProviderService } from '../services/cloud-provider.service';
 import type { SyncService } from '../services/sync.service';
 import type { StorageService } from '../services/storage.service';
 import type { HistoryService } from '../services/history.service';
 import type { AutoSyncService } from '../services/autosync.service';
+import type { OAuthService } from '../services/oauth.service';
+import type { SyncProviderType } from '../models/cloud-sync.model';
 import { applyLoginItemSetting } from './main';
 import { createLogger } from '../utils/logger.util';
 
@@ -20,11 +22,12 @@ function reply<T>(success: boolean, data?: T, error?: string): IpcResponse<T> {
 
 export function registerIpcHandlers(
   vaultService: VaultService,
-  githubService: GitHubService,
+  cloudProvider: CloudProviderService,
   syncService: SyncService,
   storageService: StorageService,
   historyService: HistoryService,
   autoSyncService: AutoSyncService,
+  oauthService: OAuthService,
   getWindow: () => BrowserWindow | null,
 ): void {
 
@@ -47,7 +50,7 @@ export function registerIpcHandlers(
     }
   });
 
-  ipcMain.handle(IPC.VAULT_CLONE, async (_event, targetPath: string, credentials: GitHubCredentials) => {
+  ipcMain.handle(IPC.VAULT_CLONE, async (_event, targetPath: string, credentials: CloudCredentials) => {
     try {
       const result = await syncService.clone(targetPath, credentials);
       return reply(result.success, result.data, result.success ? undefined : result.message);
@@ -72,26 +75,38 @@ export function registerIpcHandlers(
     return reply(true, vaultService.list());
   });
 
-  // ── GitHub ─────────────────────────────────────────────────────────────────
+  // ── Cloud ──────────────────────────────────────────────────────────────────
 
-  ipcMain.handle(IPC.GITHUB_SAVE_CONFIG, async (_event, vaultId: string, credentials: GitHubCredentials) => {
+  ipcMain.handle(IPC.CLOUD_SAVE_CONFIG, async (_event, vaultId: string, credentials: CloudCredentials) => {
     try {
-      githubService.saveConfig(vaultId, credentials);
+      cloudProvider.saveConfig(vaultId, credentials);
       return reply(true);
     } catch (err) {
       return reply(false, undefined, err instanceof Error ? err.message : 'Failed to save');
     }
   });
 
-  ipcMain.handle(IPC.GITHUB_GET_CONFIG, async (_event, vaultId: string) => {
-    const config = githubService.getConfig(vaultId);
+  ipcMain.handle(IPC.CLOUD_GET_CONFIG, async (_event, vaultId: string) => {
+    const config = cloudProvider.getConfig(vaultId);
     if (!config) return reply(false, undefined, 'No config found');
-    return reply(true, { repoUrl: config.repoUrl, branch: config.branch });
+    return reply(true, { 
+      provider: config.provider, 
+      meta: config.meta
+    });
   });
 
-  ipcMain.handle(IPC.GITHUB_VALIDATE, async (_event, credentials: GitHubCredentials) => {
-    const valid = await githubService.validate(credentials);
-    return reply(valid, valid, valid ? undefined : 'Invalid credentials or repository');
+  ipcMain.handle(IPC.CLOUD_VALIDATE, async (_event, credentials: CloudCredentials) => {
+    const res = await cloudProvider.validate(credentials);
+    return reply(res.success, res.success, res.success ? undefined : res.message);
+  });
+
+  ipcMain.handle(IPC.CLOUD_SIGN_IN, async (_event, provider: SyncProviderType) => {
+    try {
+      const token = await oauthService.signIn(provider);
+      return reply(true, token);
+    } catch (err) {
+      return reply(false, undefined, err instanceof Error ? err.message : 'Sign in failed');
+    }
   });
 
   // ── Sync ───────────────────────────────────────────────────────────────────
@@ -126,7 +141,7 @@ export function registerIpcHandlers(
     const config = storageService.load();
     const results = [];
     for (const vault of vaults) {
-      if (!config.githubConfigs[vault.id]) continue;
+      if (!config.cloudConfigs[vault.id]) continue;
       const r = await syncService.pull(vault.id, win);
       results.push({ vaultId: vault.id, name: vault.name, ...r });
     }

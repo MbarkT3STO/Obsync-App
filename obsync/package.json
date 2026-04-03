@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "chokidar": "^3.6.0",
+    "dotenv": "^17.4.0",
     "simple-git": "^3.22.0"
   }
 }

@@ -1,5 +1,5 @@
 import type { Vault, VaultSyncStatus } from './vault.model';
-import type { GitHubConfig } from './github.model';
+import type { CloudConfig } from './cloud-sync.model';
 import type { AutoSyncConfig } from './history.model';
 
 export interface AppSettings {
@@ -11,7 +11,7 @@ export interface AppSettings {
 
 export interface AppConfig {
   vaults: Vault[];
-  githubConfigs: Record<string, GitHubConfig>;
+  cloudConfigs: Record<string, CloudConfig>;
   autoSyncConfigs: Record<string, AutoSyncConfig>;
   settings: AppSettings;
   theme: 'dark' | 'light';

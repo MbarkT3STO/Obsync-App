@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../config/ipc-channels';
-import type { GitHubCredentials } from '../models/github.model';
+import type { CloudCredentials } from '../models/cloud-sync.model';
 import type { AutoSyncConfig } from '../models/history.model';
 import type { AppSettings } from '../models/app-state.model';
 
@@ -10,14 +10,15 @@ contextBridge.exposeInMainWorld('obsync', {
     add: (localPath: string) => ipcRenderer.invoke(IPC.VAULT_ADD, localPath),
     remove: (vaultId: string) => ipcRenderer.invoke(IPC.VAULT_REMOVE, vaultId),
     list: () => ipcRenderer.invoke(IPC.VAULT_LIST),
-    clone: (targetPath: string, credentials: GitHubCredentials) =>
+    clone: (targetPath: string, credentials: CloudCredentials) =>
       ipcRenderer.invoke(IPC.VAULT_CLONE, targetPath, credentials),
   },
-  github: {
-    saveConfig: (vaultId: string, credentials: GitHubCredentials) =>
-      ipcRenderer.invoke(IPC.GITHUB_SAVE_CONFIG, vaultId, credentials),
-    getConfig: (vaultId: string) => ipcRenderer.invoke(IPC.GITHUB_GET_CONFIG, vaultId),
-    validate: (credentials: GitHubCredentials) => ipcRenderer.invoke(IPC.GITHUB_VALIDATE, credentials),
+  cloud: {
+    saveConfig: (vaultId: string, credentials: CloudCredentials) =>
+      ipcRenderer.invoke(IPC.CLOUD_SAVE_CONFIG, vaultId, credentials),
+    getConfig: (vaultId: string) => ipcRenderer.invoke(IPC.CLOUD_GET_CONFIG, vaultId),
+    validate: (credentials: CloudCredentials) => ipcRenderer.invoke(IPC.CLOUD_VALIDATE, credentials),
+    signIn: (provider: string) => ipcRenderer.invoke(IPC.CLOUD_SIGN_IN, provider),
   },
   sync: {
     init: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_INIT, vaultId),

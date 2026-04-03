@@ -7,10 +7,11 @@ export const IPC = {
   VAULT_SELECT_FOLDER: 'vault:select-folder',
   VAULT_CLONE: 'vault:clone',
 
-  // GitHub
-  GITHUB_SAVE_CONFIG: 'github:save-config',
-  GITHUB_GET_CONFIG: 'github:get-config',
-  GITHUB_VALIDATE: 'github:validate',
+  // Cloud Sync
+  CLOUD_SAVE_CONFIG: 'cloud:save-config',
+  CLOUD_GET_CONFIG: 'cloud:get-config',
+  CLOUD_VALIDATE: 'cloud:validate',
+  CLOUD_SIGN_IN: 'cloud:sign-in',
 
   // Sync
   SYNC_PUSH: 'sync:push',

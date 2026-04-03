@@ -38,9 +38,9 @@ export class VaultService {
   remove(vaultId: string): void {
     const config = this.storage.load();
     const vaults = config.vaults.filter(v => v.id !== vaultId);
-    const githubConfigs = { ...config.githubConfigs };
-    delete githubConfigs[vaultId];
-    this.storage.update({ vaults, githubConfigs });
+    const cloudConfigs = { ...config.cloudConfigs };
+    delete cloudConfigs[vaultId];
+    this.storage.update({ vaults, cloudConfigs });
     logger.info(`Vault removed: ${vaultId}`);
   }
 

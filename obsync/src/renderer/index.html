@@ -223,26 +223,122 @@
           </div>
         </section>
 
-        <!-- GitHub Config -->
-        <section class="config-section" aria-labelledby="github-config-title">
-          <h2 id="github-config-title" class="section-title">GitHub Configuration</h2>
-          <form id="github-form" novalidate>
+        <!-- Cloud Config -->
+        <section class="config-section" aria-labelledby="cloud-config-title">
+          <h2 id="cloud-config-title" class="section-title">Cloud Configuration</h2>
+          <form id="cloud-form" novalidate>
             <div class="form-grid">
               <div class="form-group">
-                <label for="input-repo-url">Repository URL</label>
+                <label>Sync Provider</label>
+                <div class="custom-select" id="provider-dropdown">
+                  <div class="custom-select-trigger" id="provider-trigger">
+                    <div style="display:flex; align-items:center; gap:10px;">
+                      <div class="provider-display-icon" id="provider-display-icon"></div>
+                      <span class="provider-display-text" id="provider-display-text">Select Provider</span>
+                    </div>
+                    <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="6 9 12 15 18 9"></polyline>
+                    </svg>
+                  </div>
+                  <div class="custom-select-options" id="provider-options">
+                    <div class="custom-option" data-value="github">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+                        </svg>
+                      </div>
+                      <span>GitHub</span>
+                    </div>
+                    <div class="custom-option" data-value="gitlab">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.72 3.11-9.48a.84.84 0 0 1 1.59 0l3.03 9.24h4l3.03-9.24a.84.84 0 0 1 1.59 0l3.11 9.48 1.22 3.72a.84.84 0 0 1-.3.94z"></path>
+                        </svg>
+                      </div>
+                      <span>GitLab</span>
+                    </div>
+                    <div class="custom-option" data-value="bitbucket">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M4 3h16l2 11-10 7-10-7 2-11z"></path>
+                          <path d="M12 3v18"></path>
+                        </svg>
+                      </div>
+                      <span>Bitbucket</span>
+                    </div>
+                    <div class="custom-option" data-value="dropbox">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M21 8l-9-6-9 6 9 6 9-6zM3 8v8l9 6 9-6V8L12 14 3 8z"></path>
+                        </svg>
+                      </div>
+                      <span>Dropbox</span>
+                    </div>
+                    <div class="custom-option" data-value="onedrive">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M17.5 19a5.5 5.5 0 0 0 0-11c-.13 0-.25.01-.38.02A7 7 0 1 0 5 13.5c0 .12.01.24.02.36A4.5 4.5 0 0 0 6.5 23h11a5.5 5.5 0 0 0 0-11"></path>
+                        </svg>
+                      </div>
+                      <span>OneDrive</span>
+                    </div>
+                    <div class="custom-option" data-value="googledrive">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 2L2 19h20L12 2z"></path>
+                        </svg>
+                      </div>
+                      <span>Google Drive</span>
+                    </div>
+                    <div class="custom-option" data-value="webdav">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                          <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                          <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                          <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                        </svg>
+                      </div>
+                      <span>WebDAV</span>
+                    </div>
+                    <div class="custom-option" data-value="s3">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                          <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                          <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                        </svg>
+                      </div>
+                      <span>Amazon S3</span>
+                    </div>
+                    <div class="custom-option" data-value="git-custom">
+                      <div class="custom-option-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <circle cx="12" cy="12" r="10"></circle>
+                          <line x1="2" y1="12" x2="22" y2="12"></line>
+                          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                        </svg>
+                      </div>
+                      <span>Git (Custom URL)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="input-repo-url" id="label-repo-url">Repository URL</label>
                 <input type="url" id="input-repo-url"
                   placeholder="https://github.com/user/repo.git"
                   autocomplete="off" spellcheck="false" />
               </div>
               <div class="form-group">
-                <label for="input-branch">Branch</label>
+                <label for="input-branch" id="label-branch">Branch</label>
                 <input type="text" id="input-branch" placeholder="main" value="main"
                   autocomplete="off" spellcheck="false" />
               </div>
               <div class="form-group">
-                <label for="input-token">Personal Access Token</label>
+                <label for="input-token" id="label-token">Access Token / Password</label>
                 <div class="input-with-toggle">
-                  <input type="password" id="input-token" placeholder="ghp_xxxxxxxxxxxx"
+                  <input type="password" id="input-token" placeholder="Token or password..."
                     autocomplete="off" spellcheck="false" />
                   <button type="button" class="btn-icon" id="btn-toggle-token" aria-label="Show/hide token">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -251,6 +347,12 @@
                     </svg>
                   </button>
                 </div>
+                <button type="button" class="btn-secondary hidden" id="btn-oauth-signin" style="margin-top:10px; width:100%; justify-content:center;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M13.8 12H3"/>
+                  </svg>
+                  <span>Sign in with Provider</span>
+                </button>
                 <span class="field-hint">Encrypted locally — never exposed to the UI layer.</span>
               </div>
             </div>
@@ -402,22 +504,126 @@
 <!-- Import Modal -->
 <div class="modal-overlay hidden" id="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
   <div class="modal">
-    <h2 id="import-title">Import Vault from GitHub</h2>
-    <p>Enter the repository details and choose a local folder to clone into.</p>
+    <h2 id="import-title">Import Vault from Cloud</h2>
+    <p>Select your provider and enter the repository details to clone.</p>
     
-    <div class="form-group">
-      <label for="import-repo-url">Repository URL</label>
-      <input type="url" id="import-repo-url" placeholder="https://github.com/user/repo.git" />
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Sync Provider</label>
+        <div class="custom-select" id="import-dropdown">
+          <div class="custom-select-trigger" id="import-trigger">
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div class="provider-display-icon" id="import-display-icon"></div>
+              <span class="provider-display-text" id="import-display-text">Select Provider</span>
+            </div>
+            <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </div>
+          <div class="custom-select-options" id="import-options">
+            <div class="custom-option" data-value="github">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
+                </svg>
+              </div>
+              <span>GitHub</span>
+            </div>
+            <div class="custom-option" data-value="gitlab">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.72 3.11-9.48a.84.84 0 0 1 1.59 0l3.03 9.24h4l3.03-9.24a.84.84 0 0 1 1.59 0l3.11 9.48 1.22 3.72a.84.84 0 0 1-.3.94z"></path>
+                </svg>
+              </div>
+              <span>GitLab</span>
+            </div>
+            <div class="custom-option" data-value="bitbucket">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 3h16l2 11-10 7-10-7 2-11z"></path>
+                  <path d="M12 3v18"></path>
+                </svg>
+              </div>
+              <span>Bitbucket</span>
+            </div>
+            <div class="custom-option" data-value="dropbox">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 8l-9-6-9 6 9 6 9-6zM3 8v8l9 6 9-6V8L12 14 3 8z"></path>
+                </svg>
+              </div>
+              <span>Dropbox</span>
+            </div>
+            <div class="custom-option" data-value="onedrive">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17.5 19a5.5 5.5 0 0 0 0-11c-.13 0-.25.01-.38.02A7 7 0 1 0 5 13.5c0 .12.01.24.02.36A4.5 4.5 0 0 0 6.5 23h11a5.5 5.5 0 0 0 0-11"></path>
+                </svg>
+              </div>
+              <span>OneDrive</span>
+            </div>
+            <div class="custom-option" data-value="googledrive">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2L2 19h20L12 2z"></path>
+                </svg>
+              </div>
+              <span>Google Drive</span>
+            </div>
+            <div class="custom-option" data-value="webdav">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                  <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+                  <line x1="6" y1="6" x2="6.01" y2="6"></line>
+                  <line x1="6" y1="18" x2="6.01" y2="18"></line>
+                </svg>
+              </div>
+              <span>WebDAV</span>
+            </div>
+            <div class="custom-option" data-value="s3">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                  <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                  <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                </svg>
+              </div>
+              <span>Amazon S3</span>
+            </div>
+            <div class="custom-option" data-value="git-custom">
+              <div class="custom-option-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <line x1="2" y1="12" x2="22" y2="12"></line>
+                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+                </svg>
+              </div>
+              <span>Git (Custom URL)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="import-repo-url" id="import-label-url">Repository URL</label>
+        <input type="url" id="import-repo-url" placeholder="https://github.com/user/repo.git" />
+      </div>
     </div>
 
     <div class="form-grid">
       <div class="form-group">
-        <label for="import-branch">Branch</label>
+        <label for="import-branch" id="import-label-branch">Branch</label>
         <input type="text" id="import-branch" placeholder="main" value="main" />
       </div>
       <div class="form-group">
-        <label for="import-token">Personal Access Token</label>
-        <input type="password" id="import-token" placeholder="ghp_xxxxxxxxxxxx" />
+        <label for="import-token" id="import-label-token">Access Token / Password</label>
+        <input type="password" id="import-token" placeholder="Token or password..." />
+        <button type="button" class="btn-secondary hidden" id="btn-import-oauth" style="margin-top:10px; width:100%; justify-content:center;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M13.8 12H3"/>
+          </svg>
+          <span>Sign in with Provider</span>
+        </button>
       </div>
     </div>
 

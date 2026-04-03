@@ -1,10 +1,10 @@
 import { BrowserWindow } from 'electron';
 import { createLogger } from '../utils/logger.util';
 import { IPC } from '../config/ipc-channels';
-import type { SyncResult, GitHubCredentials } from '../models/github.model';
+import type { SyncResult, CloudCredentials } from '../models/cloud-sync.model';
 import type { VaultSyncStatus } from '../models/vault.model';
 import type { VaultService } from './vault.service';
-import type { GitHubService } from './github.service';
+import type { CloudProviderService } from './cloud-provider.service';
 
 const logger = createLogger('SyncService');
 
@@ -13,39 +13,43 @@ export class SyncService {
 
   constructor(
     private readonly vaultService: VaultService,
-    private readonly githubService: GitHubService,
+    private readonly cloudProvider: CloudProviderService,
   ) {}
 
-  async push(vaultId: string, window: BrowserWindow): Promise<SyncResult> {
+  async push(vaultId: string, window: BrowserWindow, silent = false): Promise<SyncResult> {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return { success: false, message: 'Vault not found' };
 
-    this.emitStatus(window, vaultId, 'syncing', 'Pushing changes...');
+    this.emitStatus(window, vaultId, 'syncing', 'Pushing...');
 
-    const result = await this.githubService.push(vault.localPath, vaultId);
+    const result = await this.cloudProvider.push(vault.localPath, vaultId);
 
     if (result.success) {
       this.vaultService.updateLastSynced(vaultId);
-      this.emitStatus(window, vaultId, 'synced', result.message);
+      const msg = result.message || 'Pushed successfully';
+      this.emitStatus(window, vaultId, 'synced', msg);
     } else {
       this.emitStatus(window, vaultId, 'error', result.message);
     }
 
-    this.emitComplete(window, vaultId, result);
+    if (!silent || !result.success || (result.filesChanged ?? 0) > 0) {
+      this.emitComplete(window, vaultId, result);
+    }
     return result;
   }
 
-  async pull(vaultId: string, window: BrowserWindow): Promise<SyncResult> {
+  async pull(vaultId: string, window: BrowserWindow, silent = false): Promise<SyncResult> {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return { success: false, message: 'Vault not found' };
 
-    this.emitStatus(window, vaultId, 'syncing', 'Pulling changes...');
+    this.emitStatus(window, vaultId, 'syncing', 'Pulling...');
 
-    const result = await this.githubService.pull(vault.localPath, vaultId);
+    const result = await this.cloudProvider.pull(vault.localPath, vaultId);
 
     if (result.success) {
       this.vaultService.updateLastSynced(vaultId);
-      this.emitStatus(window, vaultId, 'synced', result.message);
+      const msg = result.message || 'Pulled successfully';
+      this.emitStatus(window, vaultId, 'synced', msg);
     } else if (result.conflicts && result.conflicts.length > 0) {
       this.emitStatus(window, vaultId, 'conflict', 'Conflicts detected');
       window.webContents.send(IPC.EVENT_CONFLICT_DETECTED, { vaultId, conflicts: result.conflicts });
@@ -53,7 +57,11 @@ export class SyncService {
       this.emitStatus(window, vaultId, 'error', result.message);
     }
 
-    this.emitComplete(window, vaultId, result);
+    // Only emit complete (UI toast) if not silent, or if there were actual changes/errors
+    const hasChanges = result.message !== 'Already up to date';
+    if (!silent || !result.success || hasChanges) {
+      this.emitComplete(window, vaultId, result);
+    }
     return result;
   }
 
@@ -61,26 +69,26 @@ export class SyncService {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return { success: false, message: 'Vault not found' };
 
-    const config = this.githubService.getConfig(vaultId);
-    if (!config) return { success: false, message: 'GitHub not configured' };
+    const config = this.cloudProvider.getConfig(vaultId);
+    if (!config) return { success: false, message: 'Sync not configured' };
 
-    const token = this.githubService.getDecryptedToken(vaultId);
+    const token = this.cloudProvider.getDecryptedToken(vaultId);
     if (!token) return { success: false, message: 'Could not read token' };
 
-    return this.githubService.initRepo(vault.localPath, {
+    return this.cloudProvider.initRepo(vault.localPath, {
+      provider: config.provider,
       token,
-      repoUrl: config.repoUrl,
-      branch: config.branch,
+      meta: config.meta
     });
   }
 
-  async clone(targetPath: string, credentials: GitHubCredentials): Promise<SyncResult> {
-    const result = await this.githubService.clone(targetPath, credentials);
+  async clone(targetPath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    const result = await this.cloudProvider.clone(targetPath, credentials);
     if (!result.success) return result;
 
     try {
       const vault = this.vaultService.add(targetPath);
-      this.githubService.saveConfig(vault.id, credentials);
+      this.cloudProvider.saveConfig(vault.id, credentials);
       return { success: true, message: 'Vault imported and cloned successfully', data: vault as any };
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';

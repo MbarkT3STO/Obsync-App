@@ -1,11 +1,17 @@
 import { app, BrowserWindow, Menu } from 'electron';
+import * as dotenv from 'dotenv';
 import path from 'path';
+
+// Load environment variables from .env file
+dotenv.config();
+
 import { StorageService } from '../services/storage.service';
 import { VaultService } from '../services/vault.service';
-import { GitHubService } from '../services/github.service';
+import { CloudProviderService } from '../services/cloud-provider.service';
 import { SyncService } from '../services/sync.service';
 import { HistoryService } from '../services/history.service';
 import { AutoSyncService } from '../services/autosync.service';
+import { OAuthService } from '../services/oauth.service';
 import { TrayManager } from './tray';
 import { registerIpcHandlers } from './ipc-handlers';
 import { createLogger } from '../utils/logger.util';
@@ -15,10 +21,11 @@ const logger = createLogger('Main');
 // ── Composition root ───────────────────────────────────────────────────────
 const storageService  = new StorageService();
 const vaultService    = new VaultService(storageService);
-const githubService   = new GitHubService(storageService);
-const syncService     = new SyncService(vaultService, githubService);
-const historyService  = new HistoryService(vaultService, githubService);
+const cloudProvider   = new CloudProviderService(storageService);
+const syncService     = new SyncService(vaultService, cloudProvider);
+const historyService  = new HistoryService(vaultService, cloudProvider);
 const autoSyncService = new AutoSyncService(storageService, vaultService, syncService);
+const oauthService    = new OAuthService();
 
 let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
@@ -53,7 +60,7 @@ function createWindow(): BrowserWindow {
     show: !settings.startMinimized,
     icon: path.join(__dirname, '../../../assets/icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, '../preload/preload.js'),
+      preload: path.join(__dirname, '../preload/preload.js'), 
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -62,7 +69,11 @@ function createWindow(): BrowserWindow {
 
   win.loadFile(path.join(__dirname, '../../../src/renderer/index.html'));
 
-  // Minimize to tray instead of closing
+  // Open DevTools
+  win.webContents.openDevTools();
+
+  // For developer experience: always show window on start for now
+  win.show();
   win.on('close', (e) => {
     const cfg = storageService.load().settings;
     if (!isQuitting && cfg.minimizeToTray) {
@@ -95,7 +106,7 @@ async function runStartupPull(win: BrowserWindow): Promise<void> {
   logger.info(`Startup pull: ${vaults.length} vault(s)`);
 
   for (const vault of vaults) {
-    if (!config.githubConfigs[vault.id]) continue;
+    if (!config.cloudConfigs[vault.id]) continue;
     const result = await syncService.pull(vault.id, win);
     results.push({ name: vault.name, success: result.success, message: result.message });
   }
@@ -112,8 +123,9 @@ app.whenReady().then(() => {
   const cfg = storageService.load();
   applyLoginItemSetting(cfg.settings.launchOnStartup ?? true);
   registerIpcHandlers(
-    vaultService, githubService, syncService,
+    vaultService, cloudProvider, syncService,
     storageService, historyService, autoSyncService,
+    oauthService,
     () => mainWindow,
   );
 
