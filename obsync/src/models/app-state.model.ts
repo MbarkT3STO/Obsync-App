@@ -2,10 +2,17 @@ import type { Vault, VaultSyncStatus } from './vault.model';
 import type { GitHubConfig } from './github.model';
 import type { AutoSyncConfig } from './history.model';
 
+export interface AppSettings {
+  syncOnStartup: boolean;
+  minimizeToTray: boolean;
+  startMinimized: boolean;
+}
+
 export interface AppConfig {
   vaults: Vault[];
   githubConfigs: Record<string, GitHubConfig>;
-  autoSyncConfigs: Record<string, AutoSyncConfig>; // keyed by vaultId
+  autoSyncConfigs: Record<string, AutoSyncConfig>;
+  settings: AppSettings;
   theme: 'dark' | 'light';
   version: string;
 }

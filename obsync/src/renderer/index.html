@@ -64,7 +64,7 @@
     <main class="main-panel" id="main-panel" role="main">
 
       <!-- Welcome -->
-      <div class="panel" id="panel-welcome">
+      <div class="panel hidden" id="panel-welcome">
         <div class="empty-state">
           <div class="empty-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -83,6 +83,31 @@
             Add your first vault
           </button>
         </div>
+      </div>
+
+      <!-- Dashboard — multi-vault overview -->
+      <div class="panel hidden" id="panel-dashboard">
+        <div class="dashboard-header">
+          <h1 class="panel-title" style="margin-bottom:0">All Vaults</h1>
+          <div style="display:flex;gap:10px">
+            <button class="btn-secondary" id="btn-sync-all">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="1 4 1 10 7 10"/>
+                <polyline points="23 20 23 14 17 14"/>
+                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+              </svg>
+              Pull All
+            </button>
+            <button class="btn-primary" id="btn-dashboard-add">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              Add Vault
+            </button>
+          </div>
+        </div>
+        <div class="vault-cards" id="vault-cards"></div>
       </div>
 
       <!-- Vault Detail -->
@@ -221,6 +246,41 @@
       <!-- Settings -->
       <div class="panel hidden" id="panel-settings">
         <h1 class="panel-title">Settings</h1>
+
+        <section class="config-section">
+          <h2 class="section-title">Sync Behaviour</h2>
+          <div class="setting-row">
+            <div>
+              <span>Sync on startup</span>
+              <p class="field-hint" style="margin:2px 0 0">Pull all vaults when Obsync launches.</p>
+            </div>
+            <label class="switch" aria-label="Sync on startup">
+              <input type="checkbox" id="setting-sync-startup" />
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </label>
+          </div>
+          <div class="setting-row" style="margin-top:16px">
+            <div>
+              <span>Minimize to tray on close</span>
+              <p class="field-hint" style="margin:2px 0 0">Keep running in the background when you close the window.</p>
+            </div>
+            <label class="switch" aria-label="Minimize to tray">
+              <input type="checkbox" id="setting-minimize-tray" />
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </label>
+          </div>
+          <div class="setting-row" style="margin-top:16px">
+            <div>
+              <span>Start minimized</span>
+              <p class="field-hint" style="margin:2px 0 0">Launch directly to the tray without showing the window.</p>
+            </div>
+            <label class="switch" aria-label="Start minimized">
+              <input type="checkbox" id="setting-start-minimized" />
+              <span class="switch-track"><span class="switch-thumb"></span></span>
+            </label>
+          </div>
+        </section>
+
         <section class="config-section">
           <h2 class="section-title">Appearance</h2>
           <div class="setting-row">
@@ -231,6 +291,7 @@
             </div>
           </div>
         </section>
+
         <section class="config-section">
           <h2 class="section-title">About</h2>
           <p class="about-text">Obsync v1.0.0<br>Sync your Obsidian vaults with GitHub securely.</p>

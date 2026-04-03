@@ -10,6 +10,11 @@ const DEFAULT_CONFIG: AppConfig = {
   vaults: [],
   githubConfigs: {},
   autoSyncConfigs: {},
+  settings: {
+    syncOnStartup: false,
+    minimizeToTray: true,
+    startMinimized: false,
+  },
   theme: 'dark',
   version: APP_CONFIG.version,
 };

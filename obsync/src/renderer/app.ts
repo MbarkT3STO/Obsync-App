@@ -4,7 +4,7 @@
  */
 
 import type { Vault, VaultSyncStatus } from '../models/vault.model';
-import type { IpcResponse } from '../models/app-state.model';
+import type { IpcResponse, AppSettings } from '../models/app-state.model';
 import type { CommitEntry, FileDiff, AutoSyncConfig } from '../models/history.model';
 
 // ── Type augmentation for the contextBridge API ────────────────────────────
@@ -30,6 +30,7 @@ interface ObsyncAPI {
     init(vaultId: string): Promise<IpcResponse<void>>;
     push(vaultId: string): Promise<IpcResponse<{ message: string; filesChanged?: number }>>;
     pull(vaultId: string): Promise<IpcResponse<{ message: string }>>;
+    pullAll(): Promise<IpcResponse<Array<{ vaultId: string; name: string; success: boolean; message: string }>>>;
     getStatus(vaultId: string): Promise<IpcResponse<VaultSyncStatus>>;
   };
   history: {
@@ -40,6 +41,10 @@ interface ObsyncAPI {
     set(vaultId: string, config: AutoSyncConfig): Promise<IpcResponse<void>>;
     get(vaultId: string): Promise<IpcResponse<AutoSyncConfig>>;
   };
+  settings: {
+    get(): Promise<IpcResponse<AppSettings>>;
+    set(s: Partial<AppSettings>): Promise<IpcResponse<void>>;
+  };
   theme: {
     get(): Promise<IpcResponse<'dark' | 'light'>>;
     set(theme: 'dark' | 'light'): Promise<IpcResponse<void>>;
@@ -49,12 +54,14 @@ interface ObsyncAPI {
     syncComplete(cb: (data: { vaultId: string; result: { success: boolean; message: string } }) => void): void;
     conflictDetected(cb: (data: { vaultId: string; conflicts: Array<{ filePath: string }> }) => void): void;
     autoSyncTriggered(cb: (data: { vaultId: string }) => void): void;
+    startupPullDone(cb: (results: Array<{ name: string; success: boolean; message: string }>) => void): void;
   };
   off: {
     syncProgress(): void;
     syncComplete(): void;
     conflictDetected(): void;
     autoSyncTriggered(): void;
+    startupPullDone(): void;
   };
 }
 
@@ -113,11 +120,23 @@ const diffViewer      = $('diff-viewer');
 const diffFilePath    = $('diff-file-path');
 const btnDiffClose    = $<HTMLButtonElement>('btn-diff-close');
 
+// Dashboard
+const panelDashboard  = $('panel-dashboard');
+const vaultCards      = $('vault-cards');
+const btnSyncAll      = $<HTMLButtonElement>('btn-sync-all');
+const btnDashboardAdd = $<HTMLButtonElement>('btn-dashboard-add');
+
+// Settings
+const settingSyncStartup   = $<HTMLInputElement>('setting-sync-startup');
+const settingMinimizeTray  = $<HTMLInputElement>('setting-minimize-tray');
+const settingStartMinimized = $<HTMLInputElement>('setting-start-minimized');
+
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init(): Promise<void> {
   restoreSidebarState();
   await loadTheme();
   await loadVaults();
+  await loadSettings();
   registerEventListeners();
   registerIpcListeners();
 }
@@ -141,6 +160,12 @@ function renderVaultList(): void {
   if (vaults.length === 0) {
     showPanel('welcome');
     return;
+  }
+
+  // Show dashboard if no vault is selected
+  if (!selectedVaultId) {
+    showPanel('dashboard');
+    renderDashboard();
   }
 
   for (const vault of vaults) {
@@ -198,8 +223,9 @@ async function selectVault(vaultId: string): Promise<void> {
 }
 
 // ── Panel Management ───────────────────────────────────────────────────────
-function showPanel(panel: 'welcome' | 'vault' | 'settings'): void {
+function showPanel(panel: 'welcome' | 'dashboard' | 'vault' | 'settings'): void {
   panelWelcome.classList.toggle('hidden', panel !== 'welcome');
+  panelDashboard.classList.toggle('hidden', panel !== 'dashboard');
   panelVault.classList.toggle('hidden', panel !== 'vault');
   panelSettings.classList.toggle('hidden', panel !== 'settings');
 }
@@ -223,7 +249,10 @@ function setStatus(status: VaultSyncStatus['status'], message?: string): void {
 function registerEventListeners(): void {
   btnAddVault.addEventListener('click', handleAddVault);
   btnWelcomeAdd.addEventListener('click', handleAddVault);
-  btnSettings.addEventListener('click', () => showPanel('settings'));
+  btnSettings.addEventListener('click', () => {
+    showPanel('settings');
+    loadSettings();
+  });
   btnCollapse.addEventListener('click', toggleSidebar);
   btnToggleToken.addEventListener('click', toggleTokenVisibility);
   btnRemove.addEventListener('click', handleRemoveVault);
@@ -247,6 +276,18 @@ function registerEventListeners(): void {
   // Close modals on overlay click
   historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.add('hidden'); });
   diffModal.addEventListener('click', (e) => { if (e.target === diffModal) diffModal.classList.add('hidden'); });
+
+  // Dashboard
+  btnSyncAll.addEventListener('click', handleSyncAll);
+  btnDashboardAdd.addEventListener('click', handleAddVault);
+
+  // Settings
+  settingSyncStartup.addEventListener('change', () =>
+    window.obsync.settings.set({ syncOnStartup: settingSyncStartup.checked }));
+  settingMinimizeTray.addEventListener('change', () =>
+    window.obsync.settings.set({ minimizeToTray: settingMinimizeTray.checked }));
+  settingStartMinimized.addEventListener('change', () =>
+    window.obsync.settings.set({ startMinimized: settingStartMinimized.checked }));
 }
 
 function registerIpcListeners(): void {
@@ -283,6 +324,22 @@ function registerIpcListeners(): void {
       showToast('Auto-sync triggered — pushing changes...', 'info');
     }
   });
+
+  window.obsync.on.startupPullDone((results) => {
+    const banner = document.getElementById('startup-banner');
+    if (banner) {
+      const allOk = results.every(r => r.success);
+      banner.className = `startup-banner ${allOk ? 'done' : 'done'}`;
+      banner.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        Startup sync complete — ${results.length} vault(s) pulled
+      `;
+      setTimeout(() => banner.remove(), 4000);
+    }
+    loadVaults();
+  });
 }
 
 // ── Handlers ───────────────────────────────────────────────────────────────
@@ -314,7 +371,12 @@ async function handleRemoveVault(): Promise<void> {
     vaults = vaults.filter(v => v.id !== selectedVaultId);
     selectedVaultId = null;
     renderVaultList();
-    showPanel('welcome');
+    if (vaults.length > 0) {
+      showPanel('dashboard');
+      renderDashboard();
+    } else {
+      showPanel('welcome');
+    }
     showToast('Vault removed', 'info');
   } else {
     showToast(res.error ?? 'Failed to remove vault', 'error');
@@ -505,6 +567,101 @@ function renderDiff(diff: FileDiff): void {
       `;
       diffViewer.appendChild(lineEl);
     }
+  }
+}
+
+// ── Settings ───────────────────────────────────────────────────────────────
+async function loadSettings(): Promise<void> {
+  const res = await window.obsync.settings.get();
+  if (!res.success || !res.data) return;
+  const s = res.data;
+  settingSyncStartup.checked    = s.syncOnStartup;
+  settingMinimizeTray.checked   = s.minimizeToTray;
+  settingStartMinimized.checked = s.startMinimized;
+
+  // Show startup pull banner if syncOnStartup is on
+  if (s.syncOnStartup) {
+    showStartupBanner();
+  }
+}
+
+function showStartupBanner(): void {
+  const existing = document.getElementById('startup-banner');
+  if (existing) return;
+  const banner = document.createElement('div');
+  banner.id = 'startup-banner';
+  banner.className = 'startup-banner';
+  banner.innerHTML = `
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="1 4 1 10 7 10"/>
+      <polyline points="23 20 23 14 17 14"/>
+      <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+    </svg>
+    Pulling latest changes from all vaults...
+  `;
+  // Insert at top of main panel
+  const mainPanel = document.getElementById('main-panel');
+  mainPanel?.prepend(banner);
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
+function renderDashboard(): void {
+  vaultCards.innerHTML = '';
+  for (const vault of vaults) {
+    const card = document.createElement('div');
+    card.className = 'vault-card';
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+
+    const lastSync = vault.lastSyncedAt
+      ? new Date(vault.lastSyncedAt).toLocaleString()
+      : 'Never synced';
+
+    card.innerHTML = `
+      <div class="vault-card-header">
+        <div class="vault-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+        </div>
+        <div style="min-width:0">
+          <div class="vault-card-name">${escapeHtml(vault.name)}</div>
+          <div class="vault-card-path">${escapeHtml(vault.localPath)}</div>
+        </div>
+      </div>
+      <div class="vault-card-footer">
+        <div class="vault-card-meta">
+          <span>Last sync: ${escapeHtml(lastSync)}</span>
+        </div>
+        <span class="vault-card-status" data-card-status="${vault.id}">
+          <span class="vault-card-status-dot"></span>
+          Idle
+        </span>
+      </div>
+    `;
+
+    card.addEventListener('click', () => selectVault(vault.id));
+    card.addEventListener('keydown', (e) => { if (e.key === 'Enter') selectVault(vault.id); });
+    vaultCards.appendChild(card);
+  }
+}
+
+async function handleSyncAll(): Promise<void> {
+  setButtonLoading(btnSyncAll, true);
+  const res = await window.obsync.sync.pullAll();
+  setButtonLoading(btnSyncAll, false);
+
+  if (res.success && res.data) {
+    const ok = res.data.filter(r => r.success).length;
+    const fail = res.data.length - ok;
+    if (fail === 0) {
+      showToast(`All ${ok} vault(s) pulled successfully`, 'success');
+    } else {
+      showToast(`${ok} pulled, ${fail} failed`, 'warning');
+    }
+    await loadVaults();
+    renderDashboard();
   }
 }
 

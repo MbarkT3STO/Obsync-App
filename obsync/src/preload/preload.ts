@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 import { IPC } from '../config/ipc-channels';
 import type { GitHubCredentials } from '../models/github.model';
 import type { AutoSyncConfig } from '../models/history.model';
+import type { AppSettings } from '../models/app-state.model';
 
 contextBridge.exposeInMainWorld('obsync', {
   vault: {
@@ -20,6 +21,7 @@ contextBridge.exposeInMainWorld('obsync', {
     init: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_INIT, vaultId),
     push: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_PUSH, vaultId),
     pull: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_PULL, vaultId),
+    pullAll: () => ipcRenderer.invoke(IPC.SYNC_ALL_PULL),
     getStatus: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_STATUS, vaultId),
   },
   history: {
@@ -29,6 +31,10 @@ contextBridge.exposeInMainWorld('obsync', {
   autoSync: {
     set: (vaultId: string, config: AutoSyncConfig) => ipcRenderer.invoke(IPC.AUTOSYNC_SET, vaultId, config),
     get: (vaultId: string) => ipcRenderer.invoke(IPC.AUTOSYNC_GET, vaultId),
+  },
+  settings: {
+    get: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
+    set: (s: Partial<AppSettings>) => ipcRenderer.invoke(IPC.SETTINGS_SET, s),
   },
   theme: {
     get: () => ipcRenderer.invoke(IPC.THEME_GET),
@@ -47,11 +53,15 @@ contextBridge.exposeInMainWorld('obsync', {
     autoSyncTriggered: (cb: (data: unknown) => void) => {
       ipcRenderer.on(IPC.EVENT_AUTOSYNC_TRIGGERED, (_e, data) => cb(data));
     },
+    startupPullDone: (cb: (results: unknown) => void) => {
+      ipcRenderer.on(IPC.EVENT_STARTUP_PULL_DONE, (_e, data) => cb(data));
+    },
   },
   off: {
     syncProgress: () => ipcRenderer.removeAllListeners(IPC.EVENT_SYNC_PROGRESS),
     syncComplete: () => ipcRenderer.removeAllListeners(IPC.EVENT_SYNC_COMPLETE),
     conflictDetected: () => ipcRenderer.removeAllListeners(IPC.EVENT_CONFLICT_DETECTED),
     autoSyncTriggered: () => ipcRenderer.removeAllListeners(IPC.EVENT_AUTOSYNC_TRIGGERED),
+    startupPullDone: () => ipcRenderer.removeAllListeners(IPC.EVENT_STARTUP_PULL_DONE),
   },
 });

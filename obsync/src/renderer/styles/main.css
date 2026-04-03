@@ -1234,3 +1234,133 @@ html, body {
   border-color: var(--border);
 }
 .autosync-badge svg { width: 10px; height: 10px; }
+
+/* ── Dashboard ───────────────────────────────────────────────── */
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.vault-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.vault-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vault-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+  transform: translateY(-1px);
+}
+
+.vault-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vault-card-icon {
+  width: 38px;
+  height: 38px;
+  background: var(--accent-dim);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid var(--accent-glow);
+}
+.vault-card-icon svg { width: 18px; height: 18px; color: var(--accent); }
+
+.vault-card-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-card-path {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'Consolas', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vault-card-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vault-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.vault-card-status.synced   { background: var(--success-dim); border-color: var(--success); color: var(--success); }
+.vault-card-status.error    { background: var(--error-dim);   border-color: var(--error);   color: var(--error); }
+.vault-card-status.syncing  { background: var(--warning-dim); border-color: var(--warning); color: var(--warning); }
+.vault-card-status.autosync { background: var(--accent-dim);  border-color: var(--accent);  color: var(--accent); }
+
+.vault-card-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.vault-card-status.syncing .vault-card-status-dot { animation: pulse 1.2s ease infinite; }
+
+/* Startup pull banner */
+.startup-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--accent);
+  margin-bottom: 20px;
+  animation: fadeIn 0.3s ease;
+}
+.startup-banner svg { width: 16px; height: 16px; flex-shrink: 0; animation: spin 1s linear infinite; }
+.startup-banner.done { color: var(--success); background: var(--success-dim); border-color: var(--success); }
+.startup-banner.done svg { animation: none; }

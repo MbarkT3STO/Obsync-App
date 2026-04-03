@@ -1,6 +1,6 @@
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { IPC } from '../config/ipc-channels';
-import type { IpcResponse } from '../models/app-state.model';
+import type { IpcResponse, AppSettings } from '../models/app-state.model';
 import type { GitHubCredentials } from '../models/github.model';
 import type { AutoSyncConfig } from '../models/history.model';
 import type { VaultService } from '../services/vault.service';
@@ -24,6 +24,7 @@ export function registerIpcHandlers(
   storageService: StorageService,
   historyService: HistoryService,
   autoSyncService: AutoSyncService,
+  getWindow: () => BrowserWindow | null,
 ): void {
 
   // ── Vault ──────────────────────────────────────────────────────────────────
@@ -89,21 +90,35 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(IPC.SYNC_PUSH, async (event, vaultId: string) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window) return reply(false, undefined, 'No window');
-    const result = await syncService.push(vaultId, window);
+    const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
+    if (!win) return reply(false, undefined, 'No window');
+    const result = await syncService.push(vaultId, win);
     return reply(result.success, result, result.success ? undefined : result.message);
   });
 
   ipcMain.handle(IPC.SYNC_PULL, async (event, vaultId: string) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
-    if (!window) return reply(false, undefined, 'No window');
-    const result = await syncService.pull(vaultId, window);
+    const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
+    if (!win) return reply(false, undefined, 'No window');
+    const result = await syncService.pull(vaultId, win);
     return reply(result.success, result, result.success ? undefined : result.message);
   });
 
   ipcMain.handle(IPC.SYNC_STATUS, async (_event, vaultId: string) => {
     return reply(true, syncService.getStatus(vaultId));
+  });
+
+  ipcMain.handle(IPC.SYNC_ALL_PULL, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
+    if (!win) return reply(false, undefined, 'No window');
+    const vaults = vaultService.list();
+    const config = storageService.load();
+    const results = [];
+    for (const vault of vaults) {
+      if (!config.githubConfigs[vault.id]) continue;
+      const r = await syncService.pull(vault.id, win);
+      results.push({ vaultId: vault.id, name: vault.name, ...r });
+    }
+    return reply(true, results);
   });
 
   // ── History ────────────────────────────────────────────────────────────────
@@ -122,10 +137,10 @@ export function registerIpcHandlers(
   // ── Auto-sync ──────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.AUTOSYNC_SET, async (event, vaultId: string, config: AutoSyncConfig) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
+    const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
     autoSyncService.setConfig(vaultId, config);
-    if (config.enabled && window) {
-      autoSyncService.startWatcher(vaultId, window);
+    if (config.enabled && win) {
+      autoSyncService.startWatcher(vaultId, win);
     } else {
       autoSyncService.stopWatcher(vaultId);
     }
@@ -135,6 +150,19 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.AUTOSYNC_GET, async (_event, vaultId: string) => {
     const config = autoSyncService.getConfig(vaultId);
     return reply(true, config ?? { enabled: false, debounceSeconds: 30 });
+  });
+
+  // ── Settings ───────────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC.SETTINGS_GET, async () => {
+    const cfg = storageService.load();
+    return reply(true, cfg.settings);
+  });
+
+  ipcMain.handle(IPC.SETTINGS_SET, async (_event, settings: Partial<AppSettings>) => {
+    const cfg = storageService.load();
+    storageService.update({ settings: { ...cfg.settings, ...settings } });
+    return reply(true);
   });
 
   // ── Theme ──────────────────────────────────────────────────────────────────
