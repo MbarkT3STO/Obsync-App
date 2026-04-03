@@ -100,18 +100,63 @@ export class TrayManager {
   }
 
   private buildIcon(): Electron.NativeImage {
-    // Try loading from assets first, fall back to empty icon
+    // Load the resized 32x32 tray icon from assets
     try {
-      const iconPath = path.join(__dirname, '../../../assets/tray-icon.png');
       const fs = require('fs') as typeof import('fs');
+      const iconPath = path.join(__dirname, '../../../assets/tray-icon.png');
       if (fs.existsSync(iconPath)) {
-        return nativeImage.createFromPath(iconPath);
+        const img = nativeImage.createFromPath(iconPath);
+        if (!img.isEmpty()) return img;
       }
     } catch { /* ignore */ }
 
-    // Minimal 16x16 white square as fallback (valid PNG base64)
-    return nativeImage.createFromDataURL(
-      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAAAdgAAAHYBTnsmCAAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ5vuPBoAAABOSURBVDiNY/z//z8DJYCJgUIwasCoAaMGjBowasCoAaMGjBowasCoAaMGjBowasCoAaMGjBowasCoAaMGjBowasCoAaMGjBowasCoAaQDAACMDQ8BnFWkAAAAAElFTkSuQmCC'
+    // Fallback: programmatic purple diamond icon
+    return this.buildPngIcon();
+  }
+
+  /**
+   * Builds a 32x32 PNG icon programmatically.
+   * Draws three stacked chevron/diamond shapes in Obsync purple (#7c6af7).
+   * Uses raw PNG byte construction — no external dependencies.
+   */
+  private buildPngIcon(): Electron.NativeImage {
+    const SIZE = 32;
+    // RGBA pixel buffer
+    const pixels = new Uint8Array(SIZE * SIZE * 4); // all transparent
+
+    const purple = { r: 124, g: 106, b: 247 };
+
+    // Draw a filled diamond (rhombus) row by row
+    const drawDiamond = (
+      centerY: number, halfH: number, halfW: number, alpha: number,
+    ) => {
+      for (let y = centerY - halfH; y <= centerY + halfH; y++) {
+        if (y < 0 || y >= SIZE) continue;
+        const t = 1 - Math.abs(y - centerY) / halfH;
+        const xStart = Math.round(SIZE / 2 - t * halfW);
+        const xEnd   = Math.round(SIZE / 2 + t * halfW);
+        for (let x = xStart; x <= xEnd; x++) {
+          if (x < 0 || x >= SIZE) continue;
+          const idx = (y * SIZE + x) * 4;
+          pixels[idx]     = purple.r;
+          pixels[idx + 1] = purple.g;
+          pixels[idx + 2] = purple.b;
+          pixels[idx + 3] = alpha;
+        }
+      }
+    };
+
+    // Three stacked layers — bottom to top, increasing opacity
+    drawDiamond(24, 5, 13, 90);   // bottom layer, faint
+    drawDiamond(18, 5, 13, 160);  // middle layer
+    drawDiamond(12, 5, 13, 255);  // top layer, full opacity
+
+    // Encode as PNG using Electron's nativeImage from raw buffer
+    const img = nativeImage.createFromBuffer(
+      Buffer.from(pixels.buffer),
+      { width: SIZE, height: SIZE, scaleFactor: 1 },
     );
+
+    return img;
   }
 }

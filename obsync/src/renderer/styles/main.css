@@ -1364,3 +1364,18 @@ html, body {
 .startup-banner svg { width: 16px; height: 16px; flex-shrink: 0; animation: spin 1s linear infinite; }
 .startup-banner.done { color: var(--success); background: var(--success-dim); border-color: var(--success); }
 .startup-banner.done svg { animation: none; }
+
+/* ── Logo image ──────────────────────────────────────────────── */
+.sidebar-logo-img {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+  border-radius: 4px;
+  display: block;
+}
+
+.sidebar-logo {
+  background: transparent;
+  border: none;
+  padding: 2px;
+}

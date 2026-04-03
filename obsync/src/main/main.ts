@@ -51,6 +51,7 @@ function createWindow(): BrowserWindow {
     titleBarStyle: 'default',
     frame: true,
     show: !settings.startMinimized,
+    icon: path.join(__dirname, '../../../assets/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, '../preload/preload.js'),
       contextIsolation: true,
