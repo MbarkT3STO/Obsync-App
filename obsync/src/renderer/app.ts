@@ -127,6 +127,8 @@ const panelDashboard  = $('panel-dashboard');
 const vaultCards      = $('vault-cards');
 const btnSyncAll      = $<HTMLButtonElement>('btn-sync-all');
 const btnDashboardAdd = $<HTMLButtonElement>('btn-dashboard-add');
+const btnMenuTrigger  = $<HTMLButtonElement>('btn-menu-trigger');
+const layout          = document.querySelector('.layout') as HTMLElement;
 
 // Settings
 const settingLaunchStartup  = $<HTMLInputElement>('setting-launch-startup');
@@ -189,7 +191,10 @@ function renderVaultList(): void {
       <span class="item-status" data-vault-status="${vault.id}"></span>
     `;
 
-    li.addEventListener('click', () => selectVault(vault.id));
+    li.addEventListener('click', () => {
+      selectVault(vault.id);
+      closeMobileSidebar();
+    });
     vaultList.appendChild(li);
   }
 }
@@ -268,6 +273,7 @@ function registerEventListeners(): void {
     selectedVaultId = null;
     renderVaultList();
     setNavActive('dashboard');
+    closeMobileSidebar();
   });
   btnGoDashboard.addEventListener('click', () => {
     selectedVaultId = null;
@@ -318,6 +324,26 @@ function registerEventListeners(): void {
     window.obsync.settings.set({ minimizeToTray: settingMinimizeTray.checked }));
   settingStartMinimized.addEventListener('change', () =>
     window.obsync.settings.set({ startMinimized: settingStartMinimized.checked }));
+
+  // Mobile menu
+  btnMenuTrigger.addEventListener('click', toggleMobileSidebar);
+
+  // Close sidebar on overlay click
+  layout.addEventListener('click', (e) => {
+    if (layout.classList.contains('sidebar-open') && e.target === layout) {
+      closeMobileSidebar();
+    }
+  });
+}
+
+function toggleMobileSidebar(): void {
+  sidebar.classList.toggle('active-mobile');
+  layout.classList.toggle('sidebar-open');
+}
+
+function closeMobileSidebar(): void {
+  sidebar.classList.remove('active-mobile');
+  layout.classList.remove('sidebar-open');
 }
 
 function registerIpcListeners(): void {

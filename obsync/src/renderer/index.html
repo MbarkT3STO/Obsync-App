@@ -19,6 +19,13 @@
 
       <div class="sidebar-header">
         <div class="sidebar-brand">
+          <button class="btn-menu-mobile" id="btn-menu-mobile" aria-label="Open menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="3" y1="12" x2="21" y2="12"></line>
+              <line x1="3" y1="6" x2="21" y2="6"></line>
+              <line x1="3" y1="18" x2="21" y2="18"></line>
+            </svg>
+          </button>
           <div class="sidebar-logo" id="btn-go-dashboard" role="button" tabindex="0" aria-label="Go to dashboard" title="All Vaults">
             <img src="../../assets/logo.png" alt="Obsync" class="sidebar-logo-img" />
           </div>
@@ -68,6 +75,19 @@
 
     <!-- ── Main Panel ──────────────────────────────────────── -->
     <main class="main-panel" id="main-panel" role="main">
+      <div class="header-mobile" id="header-mobile">
+        <button class="btn-icon" id="btn-menu-trigger" aria-label="Toggle menu">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+        <div class="sidebar-logo-img-small">
+          <img src="../../assets/logo.png" alt="Obsync" style="width:24px;height:24px" />
+        </div>
+        <span style="font-weight:700">Obsync</span>
+      </div>
 
       <!-- Welcome -->
       <div class="panel hidden" id="panel-welcome">
