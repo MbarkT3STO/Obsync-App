@@ -177,6 +177,7 @@ body {
 .sidebar.collapsed .sidebar-brand {
   justify-content: center;
   padding: 20px 0 16px;
+  gap: 0;
 }
 
 .sidebar-logo {
@@ -224,26 +225,30 @@ body {
 .sidebar.collapsed .sidebar-app-name {
   opacity: 0;
   max-width: 0;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
 }
 
-/* ── Collapse toggle — full-width bar below logo ─────────────── */
+/* ── Collapse toggle — centered at top when collapsed ────────── */
 .btn-collapse {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   width: 100%;
-  height: 26px;
+  height: 32px;
   background: none;
   border: none;
   border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
   font-family: var(--font);
   cursor: pointer;
   flex-shrink: 0;
-  transition: background var(--transition), color var(--transition);
+  transition: all var(--transition);
 }
 
 .btn-collapse:hover {
@@ -252,8 +257,8 @@ body {
 }
 
 .btn-collapse svg {
-  width: 12px;
-  height: 12px;
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
   transition: transform var(--transition-slow);
 }
@@ -267,6 +272,11 @@ body {
 }
 
 /* Collapsed: flip arrow, hide label */
+.sidebar.collapsed .btn-collapse {
+  justify-content: center;
+  gap: 0;
+}
+
 .sidebar.collapsed .btn-collapse svg {
   transform: rotate(180deg);
 }
@@ -292,6 +302,9 @@ body {
 
 .sidebar.collapsed .sidebar-section-label {
   opacity: 0;
+  max-height: 0;
+  padding: 0;
+  margin: 0;
 }
 
 /* ── Vault list ──────────────────────────────────────────────── */
@@ -304,7 +317,11 @@ body {
 }
 
 .sidebar.collapsed .vault-list {
-  padding: 2px 4px;
+  padding: 12px 0px;
+}
+
+.sidebar.collapsed .vault-list::-webkit-scrollbar {
+  display: none;
 }
 
 .vault-list-item {
@@ -312,7 +329,7 @@ body {
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  margin-bottom: 2px;
+  margin: 0 8px 2px;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all var(--transition);
@@ -385,6 +402,12 @@ body {
 
 .sidebar.collapsed .item-status {
   opacity: 0;
+  width: 0;
+  max-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 
 .item-status.synced {
@@ -409,10 +432,10 @@ body {
 .sidebar-add-btn {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 4px 8px 8px;
-  padding: 9px 10px;
-  border-radius: var(--radius-sm);
+  gap: 12px;
+  margin: 4px 8px 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
   background: none;
   border: 1px dashed var(--border);
   color: var(--text-muted);
@@ -420,7 +443,7 @@ body {
   font-weight: 500;
   font-family: var(--font);
   cursor: pointer;
-  transition: background var(--transition), color var(--transition), border-color var(--transition);
+  transition: all var(--transition);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -429,16 +452,24 @@ body {
   background: var(--accent-dim);
   color: var(--accent);
   border-color: var(--accent);
+  transform: translateX(2px);
 }
 
 .sidebar-add-btn svg {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 
 .sidebar-add-btn span {
   transition: opacity var(--transition);
+}
+
+.sidebar.collapsed .sidebar-add-btn {
+  margin: 8px 8px;
+  justify-content: center;
+  padding: 12px 0;
+  gap: 0;
 }
 
 .sidebar.collapsed .sidebar-add-btn span {
@@ -447,25 +478,25 @@ body {
 
 /* ── Footer nav ──────────────────────────────────────────────── */
 .sidebar-footer {
-  padding: 8px;
+  padding: 8px 8px 12px;
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .sidebar.collapsed .sidebar-footer {
-  padding: 8px 4px;
+  padding: 12px 0px;
 }
 
 .btn-nav {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  padding: 9px 10px;
-  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
   background: none;
   border: none;
   color: var(--text-secondary);
@@ -473,7 +504,7 @@ body {
   font-weight: 500;
   font-family: var(--font);
   cursor: pointer;
-  transition: background var(--transition), color var(--transition);
+  transition: all var(--transition);
   white-space: nowrap;
   overflow: hidden;
 }
@@ -481,11 +512,13 @@ body {
 .btn-nav:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+  transform: translateX(2px);
 }
 
 .btn-nav.active {
-  background: var(--accent-dim);
+  background: var(--bg-elevated);
   color: var(--accent);
+  border: 1px solid var(--border);
 }
 
 .header-mobile {
@@ -520,8 +553,8 @@ body {
 }
 
 .btn-nav svg {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
 }
 
@@ -537,14 +570,18 @@ body {
 
 /* Force every interactive item to center its icon */
 .sidebar.collapsed .vault-list-item,
-.sidebar.collapsed .sidebar-add-btn,
 .sidebar.collapsed .btn-nav {
   position: relative;
   justify-content: center;
   padding: 12px 0;
-  margin-left: 4px;
-  margin-right: 4px;
+  margin: 0 8px 2px;
   gap: 0;
+  width: auto;
+}
+
+.sidebar.collapsed .vault-list-item:hover,
+.sidebar.collapsed .btn-nav:hover {
+  transform: scale(1.05);
 }
 
 /* Icons must never disappear when collapsed */
@@ -553,7 +590,7 @@ body {
 .sidebar.collapsed .btn-nav svg {
   flex-shrink: 0;
   opacity: 1 !important;
-  margin: 0 auto;
+  margin: 0;
 }
 
 /* Hide text labels — collapse to zero width so icon truly centers */
@@ -596,9 +633,10 @@ body {
 
 /* Active indicator bar — keep it but don't affect centering */
 .sidebar.collapsed .vault-list-item.active::before {
-  left: 0;
+  left: -8px;
   top: 15%;
   bottom: 15%;
+  width: 4px;
 }
 
 .sidebar.collapsed [data-tooltip]::after {
