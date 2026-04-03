@@ -5,6 +5,8 @@ import type { StorageService } from './storage.service';
 import { GitCloudProvider } from './providers/git.provider';
 import { WebDAVCloudProvider } from './providers/webdav.provider';
 import { GoogleDriveCloudProvider } from './providers/googledrive.provider';
+import { DropboxCloudProvider } from './providers/dropbox.provider';
+import { OneDriveCloudProvider } from './providers/onedrive.provider';
 import type { ICloudProvider } from '../models/cloud-sync.model';
 
 const logger = createLogger('CloudProviderService');
@@ -20,11 +22,10 @@ export class CloudProviderService {
     this.providers['bitbucket'] = git;
     this.providers['git-custom'] = git;
     this.providers['webdav'] = new WebDAVCloudProvider();
-    const drive = new GoogleDriveCloudProvider();
-    this.providers['googledrive'] = drive;
-    this.providers['dropbox'] = drive;
-    this.providers['onedrive'] = drive;
-    this.providers['s3'] = drive;
+    this.providers['googledrive'] = new GoogleDriveCloudProvider();
+    this.providers['dropbox'] = new DropboxCloudProvider();
+    this.providers['onedrive'] = new OneDriveCloudProvider();
+    this.providers['s3'] = this.providers['googledrive']; // S3 placeholder
     // Add more providers here (S3, Dropbox, etc.)
   }
 

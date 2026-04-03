@@ -1,4 +1,5 @@
 import chokidar from 'chokidar';
+import path from 'path';
 import { BrowserWindow } from 'electron';
 import { createLogger } from '../utils/logger.util';
 import type { FSWatcher } from 'chokidar';
@@ -12,6 +13,7 @@ const logger = createLogger('AutoSyncService');
 
 interface WatcherEntry {
   watcher: FSWatcher;
+  pendingActions: Map<string, 'push' | 'delete'>; // Path -> Action
   debounceTimer: ReturnType<typeof setTimeout> | null;
   remotePollInterval: ReturnType<typeof setInterval> | null;
   vaultId: string;
@@ -55,6 +57,7 @@ export class AutoSyncService {
 
     const entry: WatcherEntry = { 
       watcher, 
+      pendingActions: new Map(),
       debounceTimer: null, 
       remotePollInterval: null, 
       vaultId 
@@ -62,20 +65,37 @@ export class AutoSyncService {
     this.watchers.set(vaultId, entry);
 
     // Trigger local push
-    const triggerLocalPush = (eventPath?: string) => {
+    // Process queued actions
+    const triggerLocalAction = (action: 'push' | 'delete', eventPath: string) => {
+      const relativePath = path.relative(vault.localPath, eventPath).replace(/\\/g, '/');
+      if (relativePath.includes('.git/') || relativePath.includes('.obsidian/workspace')) return;
+
+      // Queue the action
+      entry.pendingActions.set(relativePath, action);
+      
       if (entry.debounceTimer) clearTimeout(entry.debounceTimer);
       
-      const debounceMs = intervalSeconds * 1000;
+      const debounceMs = (config.debounceSeconds ?? 2) * 1000;
       entry.debounceTimer = setTimeout(async () => {
-        logger.info(`Auto-push triggered for vault ${vaultId}`);
+        const actionsToProcess = Array.from(entry.pendingActions.entries());
+        entry.pendingActions.clear();
+        
+        for (const [relPath, act] of actionsToProcess) {
+          logger.info(`Auto-sync processing: ${act} ${relPath}`);
+          if (act === 'push') {
+            await this.syncService.pushFile(vaultId, relPath);
+          } else {
+            await this.syncService.delete(vaultId, relPath);
+          }
+        }
         window.webContents.send(IPC.EVENT_AUTOSYNC_TRIGGERED, { vaultId });
-        await this.syncService.push(vaultId, window, true); // silent=true
       }, debounceMs);
     };
 
-    watcher.on('add', () => triggerLocalPush());
-    watcher.on('change', () => triggerLocalPush());
-    watcher.on('unlink', () => triggerLocalPush());
+    watcher.on('add', (path) => triggerLocalAction('push', path));
+    watcher.on('change', (path) => triggerLocalAction('push', path));
+    watcher.on('unlink', (path) => triggerLocalAction('delete', path));
+    watcher.on('unlinkDir', (path) => triggerLocalAction('delete', path));
     watcher.on('error', (err) => logger.error('Watcher error', err));
 
     //── 2. Remote Poller (Periodic Pull) ─────────────────────────────────────

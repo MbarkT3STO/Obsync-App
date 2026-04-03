@@ -33,7 +33,11 @@ export interface ConflictInfo {
 export interface ICloudProvider {
   validate(credentials: CloudCredentials): Promise<SyncResult>;
   push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
+  pushFile?(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult>;
   pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
+  pullFile?(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult>;
+  getChanges?(vaultPath: string, credentials: CloudCredentials, cursor?: string): Promise<SyncResult & { cursor?: string; entries?: any[] }>;
   init?(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
   clone?(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
+  delete?(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult>;
 }

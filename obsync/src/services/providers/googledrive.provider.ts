@@ -12,6 +12,46 @@ interface DriveApiResponse {
 }
 
 export class GoogleDriveCloudProvider implements ICloudProvider {
+  async delete(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const parts = relativePath.replace(/\\/g, '/').split('/');
+      const fileName = parts.pop()!;
+      const vaultName = path.basename(vaultPath);
+      
+      // Find root folder
+      const rootRes = await this.driveApiRequest('GET', `files?q=${encodeURIComponent(`name = 'Obsync_${vaultName}' and 'root' in parents`)}&fields=files(id)`, token);
+      if (!rootRes.data.files?.length) return { success: true, message: 'Root not found' };
+      
+      let currentParentId = rootRes.data.files[0].id;
+      
+      // Traverse to the file's parent
+      for (const folderName of parts) {
+        const q = encodeURIComponent(`name = '${folderName}' and '${currentParentId}' in parents and trashed = false`);
+        const res = await this.driveApiRequest('GET', `files?q=${q}&fields=files(id)`, token);
+        if (!res.data.files?.length) return { success: true, message: 'Path not found' };
+        currentParentId = res.data.files[0].id;
+      }
+      
+      // Find the actual file
+      const q = encodeURIComponent(`name = '${fileName}' and '${currentParentId}' in parents and trashed = false`);
+      const res = await this.driveApiRequest('GET', `files?q=${q}&fields=files(id)`, token);
+      
+      if (res.data.files && res.data.files.length > 0) {
+        const fileId = res.data.files[0].id;
+        await this.driveApiRequest('DELETE', `files/${fileId}`, token);
+        // Clear from cache
+        const cacheKey = `file:${relativePath.replace(/\\/g, '/')}`;
+        this.idCache.delete(cacheKey);
+        return { success: true, message: `Deleted ${relativePath}` };
+      }
+      
+      return { success: true, message: 'File already gone' };
+    } catch (err) {
+      return { success: false, message: `Delete failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
   /** 
    * Maps relative paths to Google Drive IDs to avoid searching every time 
    */
@@ -47,26 +87,85 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
 
         const parts = relativePath.split('/');
         const fileName = parts.pop()!;
-        let currentParentId = rootFolderId;
-
-        // Traverse / create subfolders
-        let subPath = '';
-        for (const folderName of parts) {
-          subPath = subPath ? `${subPath}/${folderName}` : folderName;
-          currentParentId = await this.getOrCreateFolder(currentParentId, folderName, credentials.token, subPath);
-        }
-
+        const currentParentId = await this.getOrCreateFolderForPath(rootFolderId, parts, token);
+ 
         // Upload file
         const content = fs.readFileSync(filePath);
         await this.uploadFile(currentParentId, fileName, content, token, relativePath);
         pushed++;
       }
-
-      return { success: true, message: `Pushed ${pushed} file(s) to Google Drive`, filesChanged: pushed };
+ 
+      // Cloud Mirroring: Cleanup remote files that were deleted/renamed locally
+      // We only do this in full Push, not in partial Auto-Sync Push (which uses pushFile)
+      await this.cleanupRemote(rootFolderId, vaultPath, token, files);
+ 
+      return { success: true, message: `Pushed ${pushed} file(s) to Google Drive (Cloud Mirrored)`, filesChanged: pushed };
     } catch (err) {
       logger.error('Google Drive Push Failed:', err);
       return { success: false, message: `Push failed: ${err instanceof Error ? err.message : 'Unknown'}` };
     }
+  }
+
+  private async cleanupRemote(parentId: string, localVaultPath: string, token: string, localFiles: string[]): Promise<void> {
+    const localRelativeFiles = new Set(localFiles.map(f => path.relative(localVaultPath, f).replace(/\\/g, '/')));
+    
+    const syncCleanup = async (folderId: string, currentRelativePath: string) => {
+      const q = encodeURIComponent(`'${folderId}' in parents and trashed = false`);
+      const res = await this.driveApiRequest('GET', `files?q=${q}&fields=files(id, name, mimeType)`, token);
+      
+      for (const file of res.data.files) {
+        const relPath = currentRelativePath ? `${currentRelativePath}/${file.name}` : file.name;
+        
+        if (file.mimeType === 'application/vnd.google-apps.folder') {
+          // If the folder itself doesn't exist locally as a path prefix, delete it
+          const localHasFolder = [...localRelativeFiles].some(f => f.startsWith(`${relPath}/`));
+          if (!localHasFolder) {
+            logger.info(`Mirroring: Deleting remote folder ${relPath}`);
+            await this.driveApiRequest('DELETE', `files/${file.id}`, token);
+          } else {
+            await syncCleanup(file.id, relPath);
+          }
+        } else {
+          if (!localRelativeFiles.has(relPath)) {
+            logger.info(`Mirroring: Deleting remote file ${relPath}`);
+            await this.driveApiRequest('DELETE', `files/${file.id}`, token);
+          }
+        }
+      }
+    };
+    
+    await syncCleanup(parentId, '');
+  }
+ 
+  async pushFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const vaultName = path.basename(vaultPath);
+      const rootFolderId = await this.getOrCreateFolder('root', `Obsync_${vaultName}`, token);
+      
+      const fullPath = path.join(vaultPath, relativePath);
+      if (!fs.existsSync(fullPath)) return { success: false, message: 'Local file not found' };
+      
+      const parts = relativePath.replace(/\\/g, '/').split('/');
+      const fileName = parts.pop()!;
+      const parentId = await this.getOrCreateFolderForPath(rootFolderId, parts, token);
+      
+      const content = fs.readFileSync(fullPath);
+      await this.uploadFile(parentId, fileName, content, token, relativePath.replace(/\\/g, '/'));
+      return { success: true, message: `Pushed ${relativePath}` };
+    } catch (err) {
+      return { success: false, message: `Push file failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  private async getOrCreateFolderForPath(rootId: string, parts: string[], token: string): Promise<string> {
+    let currentParentId = rootId;
+    let subPath = '';
+    for (const folderName of parts) {
+      subPath = subPath ? `${subPath}/${folderName}` : folderName;
+      currentParentId = await this.getOrCreateFolder(currentParentId, folderName, token, subPath);
+    }
+    return currentParentId;
   }
 
   async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
@@ -121,20 +220,24 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
       };
 
       await syncFolder(rootFolderId, vaultPath);
-
-      // Cleanup local files that don't exist in cloud (Deletions/Renames)
+ 
+      // Safety Cleanup: Remove local files that don't exist in cloud (Deletions/Renames)
       const localFiles = this.getAllLocalFiles(vaultPath);
+      const now = Date.now();
+      
       for (const localFile of localFiles) {
         const relativePath = path.relative(vaultPath, localFile).replace(/\\/g, '/');
-        // Don't delete .git or obsidian workspace
         if (relativePath.includes('.git/') || relativePath.includes('.obsidian/workspace')) continue;
         
         if (!remotePaths.has(relativePath)) {
-          logger.info(`Deleting local file not found in cloud: ${relativePath}`);
-          fs.unlinkSync(localFile);
+          const stats = fs.statSync(localFile);
+          if (now - stats.mtimeMs > 10000) {
+            logger.info(`Pull Sync: Deleting local file missing from Drive: ${relativePath}`);
+            fs.unlinkSync(localFile);
+          }
         }
       }
-
+ 
       return { success: true, message: `Pulled ${pulled} file(s) from Google Drive`, filesChanged: pulled };
     } catch (err) {
       logger.error('Google Drive Pull Failed:', err);

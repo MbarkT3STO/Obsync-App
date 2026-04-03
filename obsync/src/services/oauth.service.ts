@@ -28,7 +28,14 @@ export class OAuthService {
       clientSecret: process.env.DROPBOX_CLIENT_SECRET || '',
       authUrl: 'https://www.dropbox.com/oauth2/authorize',
       tokenUrl: 'https://api.dropboxapi.com/oauth2/token',
-      scopes: []
+      scopes: [
+        'files.content.write', 
+        'files.content.read', 
+        'files.metadata.write', 
+        'files.metadata.read', 
+        'account_info.read'
+      ],
+      extraParams: { token_access_type: 'offline' }
     },
     'onedrive': {
       clientId: process.env.ONEDRIVE_CLIENT_ID || '',
@@ -49,8 +56,7 @@ export class OAuthService {
         const code = url.searchParams.get('code');
 
         if (code) {
-          const port = (server.address() as any).port;
-          const redirectUri = `http://127.0.0.1:${port}`;
+          const redirectUri = `http://127.0.0.1:51730`;
           
           try {
             const tokenData = await this.exchangeCodeForToken(config, code, redirectUri);
@@ -69,9 +75,10 @@ export class OAuthService {
         }
       });
 
-      server.listen(0, '127.0.0.1', () => {
-        const port = (server.address() as any).port;
-        const redirectUri = `http://127.0.0.1:${port}`;
+      // Use a fixed port for consistency (easier to whitelist in cloud consoles)
+      const PORT = 51730;
+      server.listen(PORT, '127.0.0.1', () => {
+        const redirectUri = `http://127.0.0.1:${PORT}`;
         
         const params = new URLSearchParams({
           client_id: config.clientId,
@@ -79,7 +86,8 @@ export class OAuthService {
           response_type: 'code',
           scope: config.scopes.join(' '),
           access_type: 'offline',
-          prompt: 'consent'
+          prompt: 'consent',
+          ...(config.extraParams || {})
         });
 
         shell.openExternal(`${config.authUrl}?${params.toString()}`);

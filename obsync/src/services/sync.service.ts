@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { BrowserWindow } from 'electron';
 import { createLogger } from '../utils/logger.util';
 import { IPC } from '../config/ipc-channels';
@@ -5,6 +7,7 @@ import type { SyncResult, CloudCredentials } from '../models/cloud-sync.model';
 import type { VaultSyncStatus } from '../models/vault.model';
 import type { VaultService } from './vault.service';
 import type { CloudProviderService } from './cloud-provider.service';
+import type { ManifestService } from './manifest.service';
 
 const logger = createLogger('SyncService');
 
@@ -14,9 +17,10 @@ export class SyncService {
   constructor(
     private readonly vaultService: VaultService,
     private readonly cloudProvider: CloudProviderService,
+    private readonly manifestService: ManifestService,
   ) {}
 
-  async push(vaultId: string, window: BrowserWindow, silent = false): Promise<SyncResult> {
+  async push(vaultId: string, window: BrowserWindow | null, silent = false): Promise<SyncResult> {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return { success: false, message: 'Vault not found' };
 
@@ -38,40 +42,85 @@ export class SyncService {
     return result;
   }
 
-  async pull(vaultId: string, window: BrowserWindow, silent = false): Promise<SyncResult> {
+  async pushFile(vaultId: string, relativePath: string): Promise<SyncResult> {
+    const vault = this.vaultService.getById(vaultId);
+    if (!vault) return { success: false, message: 'Vault not found' };
+    const creds = this.cloudProvider.getCredentials(vaultId);
+    if (!creds) return { success: false, message: 'Provider not configured' };
+    
+    const provider = (this.cloudProvider as any).providers[creds.provider];
+    if (!provider || !provider.pushFile) return this.push(vaultId, null, true);
+    
+    return provider.pushFile(vault.localPath, relativePath, creds);
+  }
+
+  async pull(vaultId: string, window: BrowserWindow | null, silent = false): Promise<SyncResult> {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return { success: false, message: 'Vault not found' };
 
-    this.emitStatus(window, vaultId, 'syncing', 'Pulling...');
+    this.emitStatus(window, vaultId, 'syncing', 'Checking for changes...');
 
+    const creds = this.cloudProvider.getCredentials(vaultId);
+    if (!creds) return { success: false, message: 'Not configured' };
+    const provider = (this.cloudProvider as any).providers[creds.provider];
+
+    // If provider supports Delta sync, use it
+    if (provider.getChanges) {
+      const manifest = this.manifestService.load(vault.localPath, vaultId);
+      const delta = await provider.getChanges(vault.localPath, creds, manifest.cursor);
+      
+      if (delta.success && delta.entries) {
+        let changed = 0;
+        for (const entry of delta.entries) {
+          const relPath = entry.path_display ? entry.path_display.split(`/Obsync_${path.basename(vault.localPath)}/`)[1] : null;
+          if (!relPath) continue;
+
+          if (entry['.tag'] === 'deleted') {
+             const localPath = path.join(vault.localPath, relPath);
+             if (fs.existsSync(localPath)) {
+               fs.rmSync(localPath, { recursive: true, force: true });
+               this.manifestService.removeFile(manifest, relPath);
+               changed++;
+             }
+          } else if (entry['.tag'] === 'file') {
+             // Atomic Pull
+             await provider.pullFile?.(vault.localPath, relPath, creds);
+             changed++;
+          }
+        }
+        manifest.cursor = delta.cursor;
+        this.manifestService.save(vault.localPath, manifest);
+        
+        if (changed > 0) {
+          this.emitStatus(window, vaultId, 'synced', `Synced ${changed} changes`);
+        } else {
+          this.emitStatus(window, vaultId, 'synced', 'Up to date');
+        }
+        return { success: true, message: `Delta sync: ${changed} changes` };
+      }
+    }
+
+    // Fallback to full pull if Delta not supported or failed
     const result = await this.cloudProvider.pull(vault.localPath, vaultId);
-
     if (result.success) {
       this.vaultService.updateLastSynced(vaultId);
       const msg = result.message || 'Pulled successfully';
       this.emitStatus(window, vaultId, 'synced', msg);
     } else if (result.conflicts && result.conflicts.length > 0) {
       this.emitStatus(window, vaultId, 'conflict', 'Conflicts detected');
-      window.webContents.send(IPC.EVENT_CONFLICT_DETECTED, { vaultId, conflicts: result.conflicts });
+      if (window) window.webContents.send(IPC.EVENT_CONFLICT_DETECTED, { vaultId, conflicts: result.conflicts });
     } else {
       this.emitStatus(window, vaultId, 'error', result.message);
     }
-
-    // Only emit complete (UI toast) if not silent, or if there were actual changes/errors
-    const hasChanges = result.message !== 'Already up to date';
-    if (!silent || !result.success || hasChanges) {
-      this.emitComplete(window, vaultId, result);
-    }
+    this.emitComplete(window, vaultId, result);
     return result;
   }
 
   async initRepo(vaultId: string): Promise<SyncResult> {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return { success: false, message: 'Vault not found' };
-
     const config = this.cloudProvider.getConfig(vaultId);
     if (!config) return { success: false, message: 'Sync not configured' };
-
     const token = this.cloudProvider.getDecryptedToken(vaultId);
     if (!token) return { success: false, message: 'Could not read token' };
 
@@ -80,6 +129,18 @@ export class SyncService {
       token,
       meta: config.meta
     });
+  }
+
+  async delete(vaultId: string, relativePath: string): Promise<SyncResult> {
+    const vault = this.vaultService.getById(vaultId);
+    if (!vault) return { success: false, message: 'Vault not found' };
+    const creds = this.cloudProvider.getCredentials(vaultId);
+    if (!creds) return { success: false, message: 'Provider not configured' };
+    
+    const provider = (this.cloudProvider as any).providers[creds.provider];
+    if (!provider || !provider.delete) return { success: false, message: 'Provider does not support deletion' };
+    
+    return provider.delete(vault.localPath, relativePath, creds);
   }
 
   async clone(targetPath: string, credentials: CloudCredentials): Promise<SyncResult> {
@@ -106,7 +167,7 @@ export class SyncService {
   }
 
   private emitStatus(
-    window: BrowserWindow,
+    window: BrowserWindow | null,
     vaultId: string,
     status: VaultSyncStatus['status'],
     message?: string,
@@ -118,11 +179,11 @@ export class SyncService {
       lastChecked: new Date().toISOString(),
     };
     this.statusMap.set(vaultId, syncStatus);
-    window.webContents.send(IPC.EVENT_SYNC_PROGRESS, syncStatus);
+    if (window) window.webContents.send(IPC.EVENT_SYNC_PROGRESS, syncStatus);
     logger.info(`[${vaultId}] status → ${status}: ${message ?? ''}`);
   }
 
-  private emitComplete(window: BrowserWindow, vaultId: string, result: SyncResult): void {
-    window.webContents.send(IPC.EVENT_SYNC_COMPLETE, { vaultId, result });
+  private emitComplete(window: BrowserWindow | null, vaultId: string, result: SyncResult): void {
+    if (window) window.webContents.send(IPC.EVENT_SYNC_COMPLETE, { vaultId, result });
   }
 }
