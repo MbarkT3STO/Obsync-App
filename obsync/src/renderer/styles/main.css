@@ -6,34 +6,35 @@
 :root {
   --font: 'Inter', system-ui, -apple-system, sans-serif;
 
-  /* Dark Theme (Obsidian Aligned) */
-  --bg-base: #000000;
-  --bg-surface: rgba(22, 22, 22, 0.82);
+  /* Dark Theme */
+  --bg-base:     #000000;
+  --bg-surface:  rgba(22, 22, 22, 0.82);
+  --bg-secondary: rgba(18, 18, 18, 0.95);
   --bg-elevated: rgba(35, 35, 35, 0.88);
-  --bg-hover: rgba(50, 50, 50, 0.9);
-  --bg-active: rgba(60, 60, 60, 1);
-  --border: rgba(255, 255, 255, 0.08);
-  --border-subtle: rgba(255, 255, 255, 0.04);
+  --bg-hover:    rgba(50, 50, 50, 0.9);
+  --bg-active:   rgba(60, 60, 60, 1);
+  --border:          rgba(255, 255, 255, 0.08);
+  --border-subtle:   rgba(255, 255, 255, 0.04);
   --border-highlight: rgba(255, 255, 255, 0.15);
 
-  --text-primary: #f5f5f7;
+  --text-primary:   #f5f5f7;
   --text-secondary: #a1a1aa;
-  --text-muted: #71717a;
-  --text-faint: #3f3f46;
+  --text-muted:     #71717a;
+  --text-faint:     #3f3f46;
 
-  --accent: #7c6af7;
-  --accent-hover: #9a8cff;
-  --accent-dim: rgba(124, 106, 247, 0.15);
-  --accent-glow: rgba(124, 106, 247, 0.25);
+  --accent:          #7c6af7;
+  --accent-hover:    #9a8cff;
+  --accent-dim:      rgba(124, 106, 247, 0.15);
+  --accent-glow:     rgba(124, 106, 247, 0.25);
   --accent-gradient: linear-gradient(135deg, #7c6af7, #a48fff);
 
-  --success: #10b981;
+  --success:     #10b981;
   --success-dim: rgba(16, 185, 129, 0.12);
-  --warning: #f59e0b;
+  --warning:     #f59e0b;
   --warning-dim: rgba(245, 158, 11, 0.12);
-  --error: #ef4444;
-  --error-dim: rgba(239, 68, 68, 0.12);
-  --info: #3b82f6;
+  --error:       #ef4444;
+  --error-dim:   rgba(239, 68, 68, 0.12);
+  --info:        #3b82f6;
 
   --radius-xs: 6px;
   --radius-sm: 8px;
@@ -41,47 +42,52 @@
   --radius-lg: 16px;
   --radius-xl: 24px;
 
-  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-  --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.2);
+  --shadow-md: 0 4px 12px -1px rgb(0 0 0 / 0.3), 0 2px 6px -2px rgb(0 0 0 / 0.2);
+  --shadow-lg: 0 10px 30px -3px rgb(0 0 0 / 0.4), 0 4px 10px -4px rgb(0 0 0 / 0.3);
+  --shadow-xl: 0 20px 50px -5px rgb(0 0 0 / 0.5), 0 8px 20px -6px rgb(0 0 0 / 0.4);
 
-  --sidebar-w: 260px;
+  --sidebar-w:           260px;
   --sidebar-collapsed-w: 72px;
-  --transition: 200ms cubic-bezier(0.4, 0, 0.2, 1);
-  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
-  --glass: blur(20px) saturate(180%);
+  --transition:          200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow:     400ms cubic-bezier(0.4, 0, 0.2, 1);
+  --glass:               blur(20px) saturate(180%);
 }
 
 [data-theme="light"] {
-  /* Light Theme (Obsidian Aligned) */
-  --bg-base: #ffffff;
-  --bg-surface: rgba(242, 242, 242, 0.88);
-  /* background-primary */
-  --bg-elevated: rgba(230, 230, 230, 0.92);
-  /* background-secondary */
-  --bg-hover: rgba(220, 220, 220, 0.95);
-  --bg-active: rgba(210, 210, 218, 1);
-  --border: rgba(0, 0, 0, 0.1);
-  --border-subtle: rgba(0, 0, 0, 0.05);
+  --bg-base:      #f8f8fa;
+  --bg-surface:   rgba(255, 255, 255, 0.92);
+  --bg-secondary: rgba(240, 240, 245, 0.98);
+  --bg-elevated:  rgba(255, 255, 255, 0.98);
+  --bg-hover:     rgba(235, 235, 242, 0.95);
+  --bg-active:    rgba(225, 225, 235, 1);
+  --border:          rgba(0, 0, 0, 0.09);
+  --border-subtle:   rgba(0, 0, 0, 0.05);
+  --border-highlight: rgba(0, 0, 0, 0.18);
 
-  --text-primary: #2e3338;
-  /* text-normal */
-  --text-secondary: #5a5a7a;
-  /* text-muted */
-  --text-muted: #8a8a8a;
-  /* text-faint */
+  --text-primary:   #1a1a2e;
+  --text-secondary: #4a4a6a;
+  --text-muted:     #7a7a9a;
+  --text-faint:     #b0b0c8;
 
-  --accent: #6c5ce7;
-  /* interactive-accent */
-  --accent-hover: #7d6cf8;
-  --accent-dim: rgba(108, 92, 231, 0.08);
-  --accent-glow: rgba(108, 92, 231, 0.15);
+  --accent:          #6c5ce7;
+  --accent-hover:    #7d6cf8;
+  --accent-dim:      rgba(108, 92, 231, 0.10);
+  --accent-glow:     rgba(108, 92, 231, 0.18);
   --accent-gradient: linear-gradient(135deg, #6c5ce7, #8e82f7);
 
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.09);
-  --shadow-lg: 0 16px 64px rgba(0, 0, 0, 0.1);
+  --success:     #059669;
+  --success-dim: rgba(5, 150, 105, 0.10);
+  --warning:     #d97706;
+  --warning-dim: rgba(217, 119, 6, 0.10);
+  --error:       #dc2626;
+  --error-dim:   rgba(220, 38, 38, 0.10);
+  --info:        #2563eb;
+
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.10), 0 1px 4px rgba(0,0,0,0.06);
+  --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.14), 0 8px 24px rgba(0,0,0,0.10);
 }
 
 /* ── Reset ──────────────────────────────────────────────────── */
@@ -104,6 +110,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
+}
+
+[data-theme="light"] body,
+[data-theme="light"] #app {
+  background: var(--bg-base);
 }
 
 :focus-visible {
@@ -532,12 +543,6 @@ body {
   transform: translateX(2px);
 }
 
-.btn-nav.active {
-  background: var(--bg-elevated);
-  color: var(--accent);
-  border: 1px solid var(--border);
-}
-
 .header-mobile {
   display: none;
   align-items: center;
@@ -834,7 +839,7 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 360px;
+  max-width: min(360px, 100%);
 }
 
 /* Status badge */
@@ -942,7 +947,7 @@ body {
 
 .stat-card:hover {
   border-color: var(--accent-dim);
-  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
 }
 
 .stat-label {
@@ -1051,6 +1056,16 @@ body {
   color: var(--text-muted);
   margin-top: 5px;
   line-height: 1.5;
+}
+
+.field-hint code {
+  font-family: 'Consolas', 'Fira Code', monospace;
+  font-size: 10px;
+  background: var(--bg-active);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  color: var(--accent);
 }
 
 .form-actions {
@@ -1213,6 +1228,17 @@ body {
   font-size: 13px;
   color: var(--text-secondary);
   flex-wrap: wrap;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.setting-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.setting-row:first-child {
+  padding-top: 0;
 }
 
 .toggle-group {
@@ -1329,8 +1355,9 @@ body {
   justify-content: center;
   z-index: 500;
   backdrop-filter: blur(6px);
-  padding: 20px;
+  padding: clamp(12px, 3vw, 24px);
   animation: fadeIn 0.15s ease;
+  overflow-y: auto;
 }
 
 .modal-overlay.hidden {
@@ -1342,9 +1369,11 @@ body {
   backdrop-filter: var(--glass);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  padding: clamp(24px, 5vw, 36px);
+  padding: clamp(20px, 4vw, 36px);
   max-width: 520px;
   width: 100%;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   box-shadow: var(--shadow-lg);
   animation: modalIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
   position: relative;
@@ -1365,6 +1394,11 @@ body {
   font-size: 16px;
   font-weight: 700;
   margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+/* Conflict modal specifically uses warning color */
+#conflict-modal h2 {
   color: var(--warning);
 }
 
@@ -1549,10 +1583,15 @@ body {
     width: 100%;
   }
 
-  .btn-primary,
-  .btn-secondary,
-  .btn-danger-outline {
+  .action-bar .btn-primary,
+  .action-bar .btn-secondary {
     flex: 1;
+    justify-content: center;
+  }
+
+  /* Remove button stays compact — don't stretch it */
+  .action-bar .btn-danger-outline {
+    flex: none;
     justify-content: center;
   }
 }
@@ -1669,6 +1708,10 @@ body {
   border-left: 4px solid var(--success);
 }
 
+.autosync-section .section-title {
+  color: var(--text-secondary);
+}
+
 .autosync-header {
   display: flex;
   align-items: center;
@@ -1760,7 +1803,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 60vh;
+  max-height: min(60vh, 480px);
   overflow-y: auto;
 }
 
@@ -1894,6 +1937,7 @@ body {
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  min-height: 120px;
 }
 
 .diff-hunk-header {
@@ -2277,6 +2321,8 @@ body {
 .btn-nav.active {
   background: var(--accent-dim);
   color: var(--accent);
+  border: 1px solid var(--accent-glow);
+}
 }
 
 /* ── Loading Overlay ─────────────────────────────────────────── */
