@@ -42,7 +42,7 @@ export class StorageService {
       if (!fs.existsSync(this.configPath)) {
         this.cache = { ...DEFAULT_CONFIG };
         this.save(this.cache);
-        return this.cache;
+        return structuredClone(this.cache);
       }
       const raw = fs.readFileSync(this.configPath, 'utf-8');
       const data = JSON.parse(raw);
@@ -82,18 +82,23 @@ export class StorageService {
       }
 
       this.cache = { ...DEFAULT_CONFIG, ...data } as AppConfig;
-      return this.cache;
+      return structuredClone(this.cache);
     } catch (err) {
       logger.error('Failed to load config, using defaults', err);
       this.cache = { ...DEFAULT_CONFIG };
-      return this.cache;
+      return structuredClone(this.cache);
     }
   }
 
   save(config: AppConfig): void {
     try {
       this.cache = config;
-      fs.writeFileSync(this.configPath, JSON.stringify(config, null, 2), 'utf-8');
+      const json = JSON.stringify(config, null, 2);
+      // Write to a temp file first, then rename — rename is atomic on all major OSes,
+      // so a crash mid-write can never leave a truncated/corrupt config file.
+      const tmpPath = `${this.configPath}.tmp`;
+      fs.writeFileSync(tmpPath, json, 'utf-8');
+      fs.renameSync(tmpPath, this.configPath);
     } catch (err) {
       logger.error('Failed to save config', err);
       throw new Error('Could not persist configuration');

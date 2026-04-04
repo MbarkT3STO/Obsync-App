@@ -72,8 +72,11 @@ interface WatcherEntry {
 export class GitSyncService {
   private statusMap = new Map<string, VaultSyncStatus>();
   private watchers = new Map<string, WatcherEntry>();
-  // Tracks paths uploaded in the current push so cloudFilePull won't re-download them
-  private recentlyPushed = new Map<string, number>(); // relPath → timestamp
+  // Per-vault sync lock — prevents concurrent push/pull on the same vault
+  private syncingVaults = new Set<string>();
+  // Tracks paths uploaded recently so cloudFilePull won't re-download them.
+  // Keyed as "vaultId:relPath" to avoid cross-vault collisions.
+  private recentlyPushed = new Map<string, number>(); // "vaultId:relPath" → timestamp
 
   constructor(
     private readonly vaultService: VaultService,
@@ -115,6 +118,12 @@ export class GitSyncService {
     if (!vault) return err('Vault not found');
     const creds = this.cloudProvider.getCredentials(vaultId);
     if (!creds) return err('Provider not configured');
+
+    if (this.syncingVaults.has(vaultId)) {
+      logger.info(`[${vaultId}] Push skipped — sync already in progress`);
+      return err('Sync already in progress for this vault');
+    }
+    this.syncingVaults.add(vaultId);
 
     this.emitStatus(window, vaultId, 'syncing', 'Committing changes...');
 
@@ -163,6 +172,8 @@ export class GitSyncService {
       this.emitStatus(window, vaultId, 'error', message);
       if (!silent) this.emitComplete(window, vaultId, err(message));
       return err(message);
+    } finally {
+      this.syncingVaults.delete(vaultId);
     }
   }
 
@@ -171,6 +182,12 @@ export class GitSyncService {
     if (!vault) return err('Vault not found');
     const creds = this.cloudProvider.getCredentials(vaultId);
     if (!creds) return err('Provider not configured');
+
+    if (this.syncingVaults.has(vaultId)) {
+      logger.info(`[${vaultId}] Pull skipped — sync already in progress`);
+      return err('Sync already in progress for this vault');
+    }
+    this.syncingVaults.add(vaultId);
 
     this.emitStatus(window, vaultId, 'syncing', 'Pulling changes...');
 
@@ -208,6 +225,8 @@ export class GitSyncService {
       const message = `Pull failed: ${msg(e)}`;
       this.emitStatus(window, vaultId, 'error', message);
       return err(message);
+    } finally {
+      this.syncingVaults.delete(vaultId);
     }
   }
 
@@ -424,10 +443,9 @@ export class GitSyncService {
         // Remove from the individual upsert/delete sets — handled as rename
         upserts.delete(newPath);
         deletes.delete(oldPath);
-        this.recentlyPushed.set(newPath, Date.now());
+        this.recentlyPushed.set(`${vaultId}:${newPath}`, Date.now());
       } catch (e) {
-        logger.warn(`Auto-sync: move failed for ${oldPath} → ${newPath}, falling back to delete+upload:`, e);
-        // Leave in upserts/deletes to be handled below
+        logger.warn(`Auto-sync: move failed for ${oldPath} → ${newPath}, falling back to delete+upload:`, e);        // Leave in upserts/deletes to be handled below
       }
     }
 
@@ -454,7 +472,7 @@ export class GitSyncService {
         if (provider.pushFile) {
           await withRetry<SyncResult>(() => provider.pushFile!(vaultPath, relPath, creds));
           logger.info(`Auto-sync: uploaded ${relPath}`);
-          this.recentlyPushed.set(relPath, Date.now());
+          this.recentlyPushed.set(`${vaultId}:${relPath}`, Date.now());
         }
       } catch (e) {
         logger.error(`Auto-sync: failed to upload ${relPath}:`, e);
@@ -680,7 +698,7 @@ export class GitSyncService {
       const now = Date.now();
       for (const absPath of collectVaultFiles(vaultPath)) {
         const rel = path.relative(vaultPath, absPath).replace(/\\/g, '/');
-        this.recentlyPushed.set(rel, now);
+        this.recentlyPushed.set(`${vaultId}:${rel}`, now);
       }
     }
 
@@ -742,7 +760,7 @@ export class GitSyncService {
     for (const [relPath, cloud] of cloudFiles) {
       // Skip files we just uploaded — their cloud lastmod will be newer than
       // local mtime (server receipt time), which would cause a spurious re-download
-      const pushedAt = this.recentlyPushed.get(relPath);
+      const pushedAt = this.recentlyPushed.get(`${vaultId}:${relPath}`);
       if (pushedAt && now - pushedAt < RECENTLY_PUSHED_TTL) {
         logger.info(`cloudFilePull: skipping recently pushed file ${relPath}`);
         continue;

@@ -67,11 +67,16 @@ function createWindow(): BrowserWindow {
 
   win.loadFile(path.join(__dirname, '../../../src/renderer/index.html'));
 
-  // Open DevTools
-  win.webContents.openDevTools();
+  // Only open DevTools in development (not in packaged builds)
+  if (!app.isPackaged) {
+    win.webContents.openDevTools();
+  }
 
-  // For developer experience: always show window on start for now
-  win.show();
+  // Respect startMinimized — only show the window if not starting to tray
+  if (!settings.startMinimized) {
+    win.show();
+  }
+
   win.on('close', (e) => {
     const cfg = storageService.load().settings;
     if (!isQuitting && cfg.minimizeToTray) {
