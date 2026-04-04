@@ -408,11 +408,27 @@ function updateLabel(
     inputBranch.placeholder = meta.branchPlaceholder;
   }
 
-  if (labelToken && meta.tokenLabel) {
-    labelToken.textContent = meta.tokenLabel;
+  if (labelToken) {
+    if (meta.useOAuth) {
+      labelToken.textContent = 'Authentication';
+    } else if (meta.tokenLabel) {
+      labelToken.textContent = meta.tokenLabel;
+    }
   }
   if (inputToken && meta.tokenPlaceholder) {
     inputToken.placeholder = meta.tokenPlaceholder;
+  }
+
+  // For OAuth providers, hide the manual token input — user signs in via the button
+  if (inputToken) {
+    const tokenContainer = inputToken.closest('.input-with-toggle') ?? inputToken.parentElement;
+    const tokenFormGroup = tokenContainer?.parentElement;
+    if (meta.useOAuth) {
+      // Hide the input row but keep the label and OAuth button visible
+      if (tokenContainer) (tokenContainer as HTMLElement).style.display = 'none';
+    } else {
+      if (tokenContainer) (tokenContainer as HTMLElement).style.display = '';
+    }
   }
 
   if (btnOAuth) {
