@@ -135,7 +135,6 @@ export class GitSyncService {
         return ok('Already up to date', 0);
       }
 
-      await git.add('.');
       await git.commit(`obsync: ${new Date().toISOString()}`);
 
       let result: SyncResult;
@@ -453,14 +452,19 @@ export class GitSyncService {
   }
 
   private async ensureGitRepo(git: SimpleGit, vaultPath: string): Promise<void> {
-    if (!fs.existsSync(path.join(vaultPath, '.git'))) {
+    const isNew = !fs.existsSync(path.join(vaultPath, '.git'));
+    if (isNew) {
       await git.init(['-b', 'main']);
       await git.addConfig('user.email', 'obsync@local', false, 'local');
       await git.addConfig('user.name', 'Obsync', false, 'local');
     }
 
-    // Always keep .gitignore up to date
-    fs.writeFileSync(path.join(vaultPath, '.gitignore'), GITIGNORE, 'utf-8');
+    // Write .gitignore only if it doesn't exist or content changed — avoids dirty state loops
+    const gitignorePath = path.join(vaultPath, '.gitignore');
+    const existing = fs.existsSync(gitignorePath) ? fs.readFileSync(gitignorePath, 'utf-8') : '';
+    if (existing !== GITIGNORE) {
+      fs.writeFileSync(gitignorePath, GITIGNORE, 'utf-8');
+    }
 
     // Need at least one commit for git operations to work
     const log = await git.log().catch(() => ({ total: 0 }));
@@ -473,37 +477,126 @@ export class GitSyncService {
   private async gitRemotePush(git: SimpleGit, creds: CloudCredentials): Promise<SyncResult> {
     const branch = creds.meta['branch'] || 'main';
     const authUrl = this.buildAuthUrl(creds.meta['repoUrl'], creds.token);
-    await git.remote(['set-url', 'origin', authUrl]);
+
+    if (!authUrl) return err('Repository URL is not configured');
+
+    // Always update remote URL with current token
+    const remotes = await git.getRemotes();
+    if (remotes.find(r => r.name === 'origin')) {
+      await git.remote(['set-url', 'origin', authUrl]);
+    } else {
+      await git.addRemote('origin', authUrl);
+    }
 
     try {
       await git.push(['origin', branch, '--set-upstream']);
+      return ok('Pushed to remote');
     } catch (pushErr) {
       const m = String(pushErr);
+
       if (m.includes('non-fast-forward') || m.includes('rejected')) {
-        await git.pull(['origin', branch, '--allow-unrelated-histories', '--no-rebase']);
+        // Remote has commits we don't have — pull first, then push
+        logger.info('Push rejected (non-fast-forward) — pulling first');
+        const pullResult = await this.gitRemotePull(git, creds);
+        if (!pullResult.success) return pullResult;
         await git.push(['origin', branch, '--set-upstream']);
-      } else throw pushErr;
+        return ok('Pushed to remote (after pull)');
+      }
+
+      if (m.includes('does not have') || m.includes('src refspec') || m.includes('nothing to push')) {
+        // Empty remote or branch doesn't exist yet — force push initial commit
+        await git.push(['origin', `HEAD:refs/heads/${branch}`, '--set-upstream']);
+        return ok('Pushed to remote (initial)');
+      }
+
+      throw pushErr;
     }
-    return ok('Pushed to remote');
   }
 
   private async gitRemotePull(git: SimpleGit, creds: CloudCredentials): Promise<SyncResult> {
     const branch = creds.meta['branch'] || 'main';
     const authUrl = this.buildAuthUrl(creds.meta['repoUrl'], creds.token);
-    await git.remote(['set-url', 'origin', authUrl]);
 
-    const result = await git.pull('origin', branch, { '--allow-unrelated-histories': null });
-    if (result.files.length === 0) return ok('Already up to date', 0);
+    if (!authUrl) return err('Repository URL is not configured');
 
-    const conflicts = result.files.filter(f => f.includes('CONFLICT'));
-    if (conflicts.length > 0) {
-      return {
-        success: false,
-        message: 'Merge conflicts detected',
-        conflicts: conflicts.map(f => ({ filePath: f, localModified: '', remoteModified: '' })),
-      };
+    const remotes = await git.getRemotes();
+    if (remotes.find(r => r.name === 'origin')) {
+      await git.remote(['set-url', 'origin', authUrl]);
+    } else {
+      await git.addRemote('origin', authUrl);
     }
-    return ok(`Pulled ${result.files.length} file(s)`, result.files.length);
+
+    // Stash any uncommitted local changes so pull doesn't fail
+    const status = await git.status();
+    const hasLocal = status.files.length > 0;
+    if (hasLocal) {
+      await git.stash(['push', '-u', '-m', 'obsync-autostash']).catch(() => {});
+    }
+
+    try {
+      // Fetch first to check if remote branch exists
+      await git.fetch('origin').catch(() => {});
+
+      // Check if remote branch exists
+      const remoteBranches = await git.branch(['-r']).catch(() => ({ all: [] as string[] }));
+      const remoteHasBranch = remoteBranches.all.some(b => b.trim() === `origin/${branch}`);
+
+      if (!remoteHasBranch) {
+        if (hasLocal) await git.stash(['pop']).catch(() => {});
+        return ok('Remote branch does not exist yet — nothing to pull', 0);
+      }
+
+      // Check if local branch exists
+      const localBranches = await git.branchLocal();
+      const localHasBranch = localBranches.all.includes(branch);
+
+      let result;
+      if (!localHasBranch) {
+        // First pull — checkout the remote branch
+        await git.checkout(['-b', branch, `origin/${branch}`]);
+        result = { files: ['(initial checkout)'], summary: {} };
+      } else {
+        // Normal pull — use rebase=false to get a merge commit on conflict
+        result = await git.pull('origin', branch, {
+          '--no-rebase': null,
+        }).catch(async (pullErr) => {
+          const m = String(pullErr);
+          if (m.includes('unrelated histories')) {
+            return git.pull('origin', branch, { '--allow-unrelated-histories': null, '--no-rebase': null });
+          }
+          if (m.includes('Already up to date') || m.includes('up to date')) {
+            return { files: [], summary: {} };
+          }
+          throw pullErr;
+        });
+      }
+
+      // Pop stash
+      if (hasLocal) await git.stash(['pop']).catch(() => {});
+
+      if (!result.files || result.files.length === 0) {
+        return ok('Already up to date', 0);
+      }
+
+      // Detect conflicts from git status after pull
+      const postStatus = await git.status();
+      if (postStatus.conflicted.length > 0) {
+        return {
+          success: false,
+          message: `${postStatus.conflicted.length} conflict(s) detected`,
+          conflicts: postStatus.conflicted.map(f => ({ filePath: f, localModified: '', remoteModified: '' })),
+        };
+      }
+
+      return ok(`Pulled ${result.files.length} file(s)`, result.files.length);
+    } catch (e) {
+      if (hasLocal) await git.stash(['pop']).catch(() => {});
+      const m = String(e);
+      if (m.includes('Already up to date') || m.includes('up to date')) {
+        return ok('Already up to date', 0);
+      }
+      throw e;
+    }
   }
 
   // ── Cloud file push/pull (non-Git providers) ───────────────────────────────
@@ -664,26 +757,48 @@ export class GitSyncService {
     const branch = credentials.meta['branch'] || 'main';
     const authUrl = this.buildAuthUrl(credentials.meta['repoUrl'], credentials.token);
 
+    if (!authUrl) throw new Error('Repository URL is required');
+
+    // Already a git repo — just update remote and pull
     if (fs.existsSync(path.join(targetPath, '.git'))) {
       const git = this.git(targetPath);
-      await git.remote(['set-url', 'origin', authUrl]).catch(() => git.addRemote('origin', authUrl));
-      await git.pull('origin', branch, { '--allow-unrelated-histories': null });
+      const remotes = await git.getRemotes();
+      if (remotes.find(r => r.name === 'origin')) {
+        await git.remote(['set-url', 'origin', authUrl]);
+      } else {
+        await git.addRemote('origin', authUrl);
+      }
+      await this.gitRemotePull(git, credentials);
       return;
     }
 
-    const entries = fs.readdirSync(targetPath);
-    if (entries.length > 0) {
-      const git = this.git(targetPath);
-      await this.ensureGitRepo(git, targetPath);
-      await git.addRemote('origin', authUrl).catch(() => git.remote(['set-url', 'origin', authUrl]));
-      await git.fetch('origin', branch);
-      await git.raw(['reset', '--hard', `origin/${branch}`]);
+    // Empty directory — standard clone
+    const entries = fs.readdirSync(targetPath).filter(e => e !== '.gitignore');
+    if (entries.length === 0) {
+      const parentDir = path.dirname(targetPath);
+      const folderName = path.basename(targetPath);
+      // Clone into a temp name then move, since clone requires the target to not exist
+      const tempName = `${folderName}_obsync_tmp_${Date.now()}`;
+      await simpleGit(parentDir).clone(authUrl, tempName, ['--branch', branch]);
+      const tempPath = path.join(parentDir, tempName);
+      // Move contents into targetPath
+      for (const item of fs.readdirSync(tempPath)) {
+        fs.renameSync(path.join(tempPath, item), path.join(targetPath, item));
+      }
+      try { fs.rmdirSync(tempPath); } catch {}
       return;
     }
 
-    const parentDir = path.dirname(targetPath);
-    const folderName = path.basename(targetPath);
-    await simpleGit(parentDir).clone(authUrl, folderName, ['--branch', branch]);
+    // Non-empty directory — init repo, add remote, fetch and merge
+    const git = this.git(targetPath);
+    await this.ensureGitRepo(git, targetPath);
+    const remotes = await git.getRemotes();
+    if (remotes.find(r => r.name === 'origin')) {
+      await git.remote(['set-url', 'origin', authUrl]);
+    } else {
+      await git.addRemote('origin', authUrl);
+    }
+    await this.gitRemotePull(git, credentials);
   }
 
   private async cloneFromCloud(targetPath: string, credentials: CloudCredentials): Promise<void> {
