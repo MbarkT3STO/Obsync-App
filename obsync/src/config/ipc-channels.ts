@@ -44,6 +44,7 @@ export const IPC = {
   // Version history
   HISTORY_LIST_VERSIONS: 'history:list-versions',
   HISTORY_RESTORE_VERSION: 'history:restore-version',
+  HISTORY_LIST_ARCHIVED_FILES: 'history:list-archived-files',
 
   // Events (main → renderer)
   EVENT_SYNC_PROGRESS: 'event:sync-progress',

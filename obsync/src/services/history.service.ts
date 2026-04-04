@@ -96,6 +96,49 @@ export class HistoryService {
     }
   }
 
+  /**
+   * Returns all files that have at least one archived version, with their
+   * most recent version's timestamp and total version count.
+   */
+  listArchivedFiles(vaultPath: string): Array<{ relativePath: string; latestTimestamp: number; versionCount: number }> {
+    try {
+      const archiveBase = path.join(vaultPath, '.obsync', 'archive');
+      if (!fs.existsSync(archiveBase)) return [];
+
+      const results: Array<{ relativePath: string; latestTimestamp: number; versionCount: number }> = [];
+
+      const walk = (dir: string, relBase: string) => {
+        for (const entry of fs.readdirSync(dir)) {
+          const full = path.join(dir, entry);
+          const rel = relBase ? `${relBase}/${entry}` : entry;
+          const stat = fs.statSync(full);
+          if (stat.isDirectory()) {
+            // Check if this directory contains version files (not subdirs)
+            const children = fs.readdirSync(full);
+            const hasVersionFiles = children.some(c => fs.statSync(path.join(full, c)).isFile());
+            if (hasVersionFiles) {
+              const versions = this.listVersions(vaultPath, rel);
+              if (versions.length > 0) {
+                results.push({
+                  relativePath: rel,
+                  latestTimestamp: versions[0]!.timestamp,
+                  versionCount: versions.length,
+                });
+              }
+            } else {
+              walk(full, rel);
+            }
+          }
+        }
+      };
+
+      walk(archiveBase, '');
+      return results.sort((a, b) => b.latestTimestamp - a.latestTimestamp);
+    } catch {
+      return [];
+    }
+  }
+
   async getCommits(vaultId: string, limit = 30): Promise<CommitEntry[]> {
     const vault = this.vaultService.getById(vaultId);
     if (!vault || !fs.existsSync(path.join(vault.localPath, '.git'))) return [];
@@ -163,10 +206,17 @@ export class HistoryService {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return null;
 
-    const absPath = path.join(vault.localPath, filePath);
-
     try {
       const git = simpleGit({ baseDir: vault.localPath, binary: 'git' });
+
+      // If filePath looks like a commit hash, show the full commit diff
+      const isHash = /^[a-f0-9]{7,40}$/.test(filePath.trim());
+      if (isHash) {
+        return this.getCommitDiff(git, filePath.trim());
+      }
+
+      // Otherwise show working-tree diff of the file vs HEAD
+      const absPath = path.join(vault.localPath, filePath);
       let localContent = '';
       if (fs.existsSync(absPath)) {
         localContent = fs.readFileSync(absPath, 'utf-8');
@@ -193,6 +243,85 @@ export class HistoryService {
       logger.error('Failed to get file diff', err);
       return null;
     }
+  }
+
+  /**
+   * Returns a FileDiff for an entire commit using `git show`.
+   * Parses the unified diff output into hunks the renderer already knows how to display.
+   */
+  private async getCommitDiff(git: ReturnType<typeof simpleGit>, hash: string): Promise<FileDiff> {
+    // --unified=3 gives 3 lines of context, same as standard diff
+    const raw = await git.raw(['show', hash, '--unified=3', '--no-color', '--diff-filter=ACDMRT']);
+
+    const hunks: DiffHunk[] = [];
+    let currentHunk: DiffHunk | null = null;
+    let lineNo = 0;
+    let commitMessage = '';
+    let inHeader = true;
+
+    for (const line of raw.split('\n')) {
+      // Capture commit message from the show header (before the first diff --git line)
+      if (inHeader) {
+        if (line.startsWith('diff --git')) {
+          inHeader = false;
+        } else if (line.startsWith('    ') && !commitMessage) {
+          commitMessage = line.trim();
+        }
+        continue;
+      }
+
+      if (line.startsWith('diff --git')) {
+        // New file section — push previous hunk and start fresh
+        if (currentHunk) hunks.push(currentHunk);
+        currentHunk = null;
+        // Use the file path as a section header
+        const match = line.match(/diff --git a\/.+ b\/(.+)/);
+        const fileName = match ? match[1] : line;
+        currentHunk = { header: `── ${fileName} ──`, lines: [] };
+        continue;
+      }
+
+      // Skip git metadata lines
+      if (line.startsWith('index ') || line.startsWith('--- ') ||
+          line.startsWith('+++ ') || line.startsWith('new file') ||
+          line.startsWith('deleted file') || line.startsWith('old mode') ||
+          line.startsWith('new mode') || line.startsWith('Binary files') ||
+          line.startsWith('similarity') || line.startsWith('rename')) {
+        continue;
+      }
+
+      if (line.startsWith('@@')) {
+        // Hunk header — extract starting line number
+        const m = line.match(/@@ -\d+(?:,\d+)? \+(\d+)/);
+        lineNo = m ? parseInt(m[1]!, 10) - 1 : 0;
+        if (currentHunk) {
+          currentHunk.lines.push({ type: 'context', content: line, lineNo: undefined });
+        }
+        continue;
+      }
+
+      if (!currentHunk) continue;
+
+      if (line.startsWith('+')) {
+        lineNo++;
+        currentHunk.lines.push({ type: 'added', content: line.slice(1), lineNo });
+      } else if (line.startsWith('-')) {
+        currentHunk.lines.push({ type: 'removed', content: line.slice(1), lineNo: undefined });
+      } else if (line.startsWith(' ') || line === '') {
+        lineNo++;
+        currentHunk.lines.push({ type: 'context', content: line.slice(1), lineNo });
+      }
+    }
+
+    if (currentHunk) hunks.push(currentHunk);
+
+    return {
+      filePath: commitMessage || hash,
+      status: 'modified',
+      localContent: '',
+      remoteContent: '',
+      hunks,
+    };
   }
 
   private detectStatus(local: string, remote: string): FileDiff['status'] {

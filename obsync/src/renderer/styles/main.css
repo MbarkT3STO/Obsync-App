@@ -1906,6 +1906,19 @@ body {
   top: 0;
 }
 
+.diff-file-header {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  margin-top: 4px;
+}
+
 .diff-line {
   display: flex;
   align-items: flex-start;

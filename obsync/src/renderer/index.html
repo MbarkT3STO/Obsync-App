@@ -679,7 +679,7 @@
   <div class="modal modal-wide">
     <div class="modal-header">
       <div>
-        <h2 id="versions-title" style="color:var(--text-primary)">File Version History</h2>
+        <h2 id="versions-title" style="color:var(--text-primary)">Archived File Versions</h2>
         <p class="diff-file-path" id="versions-file-path"></p>
       </div>
       <button class="btn-icon" id="btn-versions-close" aria-label="Close versions">
@@ -688,15 +688,11 @@
         </svg>
       </button>
     </div>
-    <div class="form-group" style="margin-bottom:16px">
-      <label for="versions-file-input">File path (relative to vault)</label>
-      <div style="display:flex;gap:8px">
-        <input type="text" id="versions-file-input" placeholder="e.g. Notes/my-note.md" style="flex:1" />
-        <button class="btn-secondary" id="btn-versions-load">Load</button>
-      </div>
-    </div>
+    <!-- Hidden input used programmatically when drilling into a specific file -->
+    <input type="hidden" id="versions-file-input" />
+    <button id="btn-versions-load" style="display:none"></button>
     <div class="history-list" id="versions-list">
-      <div class="history-empty">Enter a file path above to view its versions.</div>
+      <div class="history-empty">Loading...</div>
     </div>
   </div>
 </div>

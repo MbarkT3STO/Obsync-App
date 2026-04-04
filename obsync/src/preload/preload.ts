@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld('obsync', {
     getFileDiff: (vaultId: string, filePath: string) => ipcRenderer.invoke(IPC.HISTORY_GET_DIFF, vaultId, filePath),
     listVersions: (vaultId: string, filePath: string) => ipcRenderer.invoke(IPC.HISTORY_LIST_VERSIONS, vaultId, filePath),
     restoreVersion: (vaultId: string, filePath: string, version: string) => ipcRenderer.invoke(IPC.HISTORY_RESTORE_VERSION, vaultId, filePath, version),
+    listArchivedFiles: (vaultId: string) => ipcRenderer.invoke(IPC.HISTORY_LIST_ARCHIVED_FILES, vaultId),
   },
   autoSync: {
     set: (vaultId: string, config: AutoSyncConfig) => ipcRenderer.invoke(IPC.AUTOSYNC_SET, vaultId, config),

@@ -43,6 +43,7 @@ interface ObsyncAPI {
     getFileDiff(vaultId: string, filePath: string): Promise<IpcResponse<FileDiff>>;
     listVersions(vaultId: string, filePath: string): Promise<IpcResponse<Array<{ version: string; timestamp: number; size: number }>>>;
     restoreVersion(vaultId: string, filePath: string, version: string): Promise<IpcResponse<void>>;
+    listArchivedFiles(vaultId: string): Promise<IpcResponse<Array<{ relativePath: string; latestTimestamp: number; versionCount: number }>>>;
   };
   autoSync: {
     set(vaultId: string, config: AutoSyncConfig): Promise<IpcResponse<void>>;
@@ -687,8 +688,8 @@ function registerEventListeners(): void {
   btnShowVersions.addEventListener('click', () => {
     versionsModal.classList.remove('hidden');
     versionsFileInput.value = '';
-    versionsList.innerHTML = '<div class="history-empty">Enter a file path above to view its versions.</div>';
     versionsFilePath.textContent = '';
+    handleLoadArchivedFiles();
   });
   btnVersionsClose.addEventListener('click', () => versionsModal.classList.add('hidden'));
   versionsModal.addEventListener('click', (e) => { if (e.target === versionsModal) versionsModal.classList.add('hidden'); });
@@ -1177,10 +1178,9 @@ async function handleShowHistory(): Promise<void> {
       </div>
     `;
 
-    // Click to show diff for this commit's changed files
+    // Click to show diff for this commit
     item.addEventListener('click', () => {
-      if (selectedVaultId && commit.filesChanged > 0) {
-        // Show diff for the first changed file — best we can do without a file picker
+      if (selectedVaultId) {
         historyModal.classList.add('hidden');
         handleShowDiff(selectedVaultId, commit.hash);
       }
@@ -1197,7 +1197,9 @@ async function handleShowHistory(): Promise<void> {
 }
 
 async function handleShowDiff(vaultId: string, filePathOrHash: string): Promise<void> {
-  diffFilePath.textContent = filePathOrHash;
+  // Show short hash while loading
+  const isHash = /^[a-f0-9]{7,40}$/.test(filePathOrHash.trim());
+  diffFilePath.textContent = isHash ? filePathOrHash.slice(0, 7) : filePathOrHash;
   diffViewer.innerHTML = '<div class="diff-empty">Loading diff...</div>';
   diffModal.classList.remove('hidden');
 
@@ -1207,6 +1209,8 @@ async function handleShowDiff(vaultId: string, filePathOrHash: string): Promise<
     return;
   }
 
+  // Use the commit message (returned as filePath for commit diffs) as the title
+  diffFilePath.textContent = res.data.filePath || filePathOrHash;
   renderDiff(res.data);
 }
 
@@ -1220,7 +1224,9 @@ function renderDiff(diff: FileDiff): void {
 
   for (const hunk of diff.hunks) {
     const hunkHeader = document.createElement('div');
-    hunkHeader.className = 'diff-hunk-header';
+    // File section headers (── filename ──) get a distinct style
+    const isFileHeader = hunk.header.startsWith('──');
+    hunkHeader.className = isFileHeader ? 'diff-file-header' : 'diff-hunk-header';
     hunkHeader.textContent = hunk.header;
     diffViewer.appendChild(hunkHeader);
 
@@ -1513,6 +1519,41 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#039;');
 }
 
+async function handleLoadArchivedFiles(): Promise<void> {
+  if (!selectedVaultId) return;
+  versionsList.innerHTML = '<div class="history-loading">Loading archived files...</div>';
+  versionsFilePath.textContent = '';
+
+  const res = await window.obsync.history.listArchivedFiles(selectedVaultId);
+  if (!res.success || !res.data || res.data.length === 0) {
+    versionsList.innerHTML = '<div class="history-empty">No archived versions found. Files deleted during sync are saved here automatically.</div>';
+    return;
+  }
+
+  versionsList.innerHTML = '';
+  for (const file of res.data) {
+    const item = document.createElement('div');
+    item.className = 'commit-item';
+    item.style.cursor = 'pointer';
+    const date = new Date(file.latestTimestamp).toLocaleString();
+    item.innerHTML = `
+      <div class="commit-body" style="flex:1">
+        <div class="commit-message">${escapeHtml(file.relativePath)}</div>
+        <div class="commit-meta">
+          <span>${file.versionCount} version${file.versionCount !== 1 ? 's' : ''}</span>
+          <span>Latest: ${escapeHtml(date)}</span>
+        </div>
+      </div>
+      <button class="btn-secondary" style="font-size:12px;padding:6px 12px">View versions</button>
+    `;
+    item.querySelector('button')!.addEventListener('click', () => {
+      versionsFileInput.value = file.relativePath;
+      handleLoadVersions();
+    });
+    versionsList.appendChild(item);
+  }
+}
+
 async function handleLoadVersions(): Promise<void> {
   if (!selectedVaultId) return;
   const filePath = versionsFileInput.value.trim();
@@ -1526,11 +1567,18 @@ async function handleLoadVersions(): Promise<void> {
 
   const res = await window.obsync.history.listVersions(selectedVaultId, filePath);
   if (!res.success || !res.data || res.data.length === 0) {
-    versionsList.innerHTML = '<div class="history-empty">No archived versions found for this file.</div>';
+    versionsList.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="history-empty">No archived versions found for this file.</div>
+        <button class="btn-secondary" id="btn-versions-back" style="align-self:flex-start">← Back to all files</button>
+      </div>`;
+    document.getElementById('btn-versions-back')?.addEventListener('click', handleLoadArchivedFiles);
     return;
   }
 
-  versionsList.innerHTML = '';
+  versionsList.innerHTML = `<button class="btn-secondary" id="btn-versions-back" style="margin-bottom:12px;align-self:flex-start">← Back to all files</button>`;
+  document.getElementById('btn-versions-back')?.addEventListener('click', handleLoadArchivedFiles);
+
   for (const v of res.data) {
     const item = document.createElement('div');
     item.className = 'commit-item';
@@ -1544,7 +1592,7 @@ async function handleLoadVersions(): Promise<void> {
       </div>
       <button class="btn-secondary" style="font-size:12px;padding:6px 12px" data-version="${escapeHtml(v.version)}">Restore</button>
     `;
-    const restoreBtn = item.querySelector('button')!;
+    const restoreBtn = item.querySelector('button[data-version]') as HTMLButtonElement;
     restoreBtn.addEventListener('click', async () => {
       showConfirm(
         `Restore "${filePath}" to version from ${date}? The current version will be archived.`,

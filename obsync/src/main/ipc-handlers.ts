@@ -199,6 +199,13 @@ export function registerIpcHandlers(
     return reply(true, versions);
   });
 
+  ipcMain.handle(IPC.HISTORY_LIST_ARCHIVED_FILES, async (_event, vaultId: string) => {
+    const vault = vaultService.getById(vaultId);
+    if (!vault) return reply(false, undefined, 'Vault not found');
+    const files = historyService.listArchivedFiles(vault.localPath);
+    return reply(true, files);
+  });
+
   ipcMain.handle(IPC.HISTORY_RESTORE_VERSION, async (_event, vaultId: string, filePath: string, version: string) => {
     const vault = vaultService.getById(vaultId);
     if (!vault) return reply(false, undefined, 'Vault not found');
