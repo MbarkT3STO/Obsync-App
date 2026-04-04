@@ -295,10 +295,14 @@ async function init(): Promise<void> {
 function initCustomSelects() {
   providerSelect = new CustomSelect('provider-dropdown', (val) => {
     currentProvider = val as SyncProviderType;
+    inputToken.value = '';
+    resetOAuthButton(btnOAuthSignIn);
     updateLabel(val as SyncProviderType, labelRepoUrl, labelBranch, inputRepoUrl, inputBranch, labelToken, inputToken, btnOAuthSignIn);
   });
   importProviderSelect = new CustomSelect('import-dropdown', (val) => {
     currentImportProvider = val as SyncProviderType;
+    inputImportToken.value = '';
+    resetOAuthButton(btnImportOAuth);
     updateLabel(val as SyncProviderType, importLabelUrl, importLabelBranch, inputImportRepo, inputImportBranch, importLabelToken, inputImportToken, btnImportOAuth);
   });
 
@@ -419,15 +423,15 @@ function updateLabel(
     inputToken.placeholder = meta.tokenPlaceholder;
   }
 
-  // For OAuth providers, hide the manual token input — user signs in via the button
+  // For OAuth providers, hide the manual token input — user signs in via the button.
+  // Hide the .input-with-toggle wrapper if present (main form), otherwise just the input itself.
   if (inputToken) {
-    const tokenContainer = inputToken.closest('.input-with-toggle') ?? inputToken.parentElement;
-    const tokenFormGroup = tokenContainer?.parentElement;
+    const wrapper = inputToken.closest('.input-with-toggle') as HTMLElement | null;
+    const target = wrapper ?? inputToken;
     if (meta.useOAuth) {
-      // Hide the input row but keep the label and OAuth button visible
-      if (tokenContainer) (tokenContainer as HTMLElement).style.display = 'none';
+      target.style.display = 'none';
     } else {
-      if (tokenContainer) (tokenContainer as HTMLElement).style.display = '';
+      target.style.display = '';
     }
   }
 
@@ -663,6 +667,10 @@ function registerEventListeners(): void {
     inputImportBranch.value = 'main';
     inputImportToken.value = '';
     inputImportPath.value = '';
+    // Reset OAuth button state
+    resetOAuthButton(btnImportOAuth);
+    // Trigger label update so fields show correctly for the default provider
+    updateLabel('github', importLabelUrl, importLabelBranch, inputImportRepo, inputImportBranch, importLabelToken, inputImportToken, btnImportOAuth);
   });
 
   btnImportBrowse.addEventListener('click', async () => {
@@ -683,17 +691,20 @@ function registerEventListeners(): void {
 
     const meta = getProviderMeta(provider);
 
-    // Validation
     if (!localPath) {
       showToast('Please choose a local folder', 'error');
       return;
     }
-    if (!token) {
-      showToast('Access token / password is required', 'error');
-      return;
-    }
     if (meta.isGit && !repoUrl) {
       showToast('Repository URL is required for Git providers', 'error');
+      return;
+    }
+    if (!token) {
+      if (meta.useOAuth) {
+        showToast(`Please sign in with ${provider.charAt(0).toUpperCase() + provider.slice(1)} first`, 'warning');
+      } else {
+        showToast('Access token / password is required', 'error');
+      }
       return;
     }
 
@@ -738,13 +749,19 @@ function registerEventListeners(): void {
     const provider = isImport ? importProviderSelect.getValue() : providerSelect.getValue();
     const tokenInput = isImport ? inputImportToken : inputToken;
     const btn = isImport ? btnImportOAuth : btnOAuthSignIn;
+    const providerName = provider.charAt(0).toUpperCase() + provider.slice(1);
 
     setButtonLoading(btn, true);
     try {
       const res = await window.obsync.cloud.signIn(provider as SyncProviderType);
       if (res.success && res.data) {
         tokenInput.value = res.data;
-        showToast(`Successfully signed in with ${provider.charAt(0).toUpperCase() + provider.slice(1)}`, 'success');
+        // Update button to show signed-in state
+        const span = btn.querySelector('span');
+        if (span) span.textContent = `Signed in to ${providerName} ✓`;
+        btn.style.borderColor = 'var(--success)';
+        btn.style.color = 'var(--success)';
+        showToast(`Signed in to ${providerName} — ready to import`, 'success');
       } else {
         showToast(res.error || 'Sign in failed', 'error');
       }
@@ -1274,6 +1291,13 @@ function showToast(message: string, type: 'success' | 'error' | 'warning' | 'inf
 
 function toggleTokenVisibility(): void {
   inputToken.type = inputToken.type === 'password' ? 'text' : 'password';
+}
+
+function resetOAuthButton(btn: HTMLButtonElement): void {
+  const span = btn.querySelector('span');
+  if (span) span.textContent = 'Sign in with Provider';
+  btn.style.borderColor = '';
+  btn.style.color = '';
 }
 
 function setButtonLoading(btn: HTMLButtonElement, loading: boolean): void {
