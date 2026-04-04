@@ -2315,3 +2315,86 @@ body {
 .vault-card:hover .vault-card-icon svg {
   transform: scale(1.1) rotate(-5deg);
 }
+
+/* ── Provider badge ──────────────────────────────────────────── */
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: var(--radius-xl);
+  background: var(--accent-dim);
+  border: 1px solid var(--accent-glow);
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+/* ── Confirm dialog ──────────────────────────────────────────── */
+#confirm-overlay .modal h2 {
+  color: var(--text-primary);
+}
+
+#confirm-overlay .modal p {
+  color: var(--text-secondary);
+  margin-bottom: 0;
+}
+
+/* ── Commit item clickable ───────────────────────────────────── */
+.commit-item {
+  cursor: pointer;
+}
+
+.commit-item:hover {
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+
+/* ── Keyboard shortcut hint ──────────────────────────────────── */
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: 'Consolas', monospace;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+/* ── Sync progress on buttons ────────────────────────────────── */
+.btn-primary.syncing,
+.btn-secondary.syncing {
+  pointer-events: none;
+}
+
+.btn-primary.syncing::after,
+.btn-secondary.syncing::after {
+  content: '';
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.55s linear infinite;
+  margin-left: 2px;
+}
+
+/* ── Dashboard empty state ───────────────────────────────────── */
+.vault-cards:empty::after {
+  content: 'No vaults match your search.';
+  display: block;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 40px;
+  grid-column: 1 / -1;
+}
+
+/* ── Tooltip on action bar buttons ──────────────────────────────*/
+[title] {
+  position: relative;
+}

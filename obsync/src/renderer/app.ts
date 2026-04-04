@@ -117,7 +117,35 @@ const btnConflictLocal = $<HTMLButtonElement>('btn-conflict-local');
 const btnConflictCloud = $<HTMLButtonElement>('btn-conflict-cloud');
 const btnConflictBoth  = $<HTMLButtonElement>('btn-conflict-both');
 
-// Resolution Logic
+// ── Confirm Dialog (replaces native confirm()) ────────────────────────────
+function showConfirm(message: string, onConfirm: () => void, confirmLabel = 'Confirm', danger = false): void {
+  const existing = document.getElementById('confirm-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'confirm-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.style.zIndex = '600';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:400px">
+      <p style="color:var(--text-primary);font-size:14px;line-height:1.6;margin-bottom:20px">${escapeHtml(message)}</p>
+      <div class="modal-actions" style="gap:10px;justify-content:flex-end">
+        <button class="btn-secondary" id="confirm-cancel">Cancel</button>
+        <button class="${danger ? 'btn-danger-outline' : 'btn-primary'}" id="confirm-ok">${escapeHtml(confirmLabel)}</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(overlay);
+
+  const close = () => overlay.remove();
+  overlay.querySelector('#confirm-cancel')!.addEventListener('click', close);
+  overlay.querySelector('#confirm-ok')!.addEventListener('click', () => { close(); onConfirm(); });
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+  // Focus the confirm button
+  setTimeout(() => (overlay.querySelector('#confirm-ok') as HTMLButtonElement)?.focus(), 50);
+}
 async function handleConflictResolution(strategy: 'local' | 'cloud' | 'both'): Promise<void> {
   if (!currentConflicts) return;
   const { vaultId, files } = currentConflicts;
@@ -554,12 +582,16 @@ async function selectVault(vaultId: string): Promise<void> {
     inputCloudVaultName.value = meta?.cloudVaultName || '';
     const m = getProviderMeta(provider);
     cloudVaultNameGroup.style.display = m.isGit ? 'none' : '';
+
+    // Show provider badge in vault header
+    updateProviderBadge(provider);
   } else {
     providerSelect.setValue('github');
     inputRepoUrl.value = '';
     inputBranch.value = 'main';
     inputCloudVaultName.value = '';
     cloudVaultNameGroup.style.display = 'none';
+    updateProviderBadge(null);
   }
   inputToken.value = '';
 
@@ -797,6 +829,34 @@ function registerEventListeners(): void {
 
   btnOAuthSignIn.addEventListener('click', () => handleOAuth(false));
   btnImportOAuth.addEventListener('click', () => handleOAuth(true));
+
+  // ── Keyboard shortcuts ─────────────────────────────────────────────────
+  document.addEventListener('keydown', (e) => {
+    // Escape — close any open modal
+    if (e.key === 'Escape') {
+      for (const modal of [conflictModal, historyModal, diffModal, versionsModal, importModal]) {
+        if (!modal.classList.contains('hidden')) {
+          modal.classList.add('hidden');
+          return;
+        }
+      }
+      const confirmOverlay = document.getElementById('confirm-overlay');
+      if (confirmOverlay) { confirmOverlay.remove(); return; }
+    }
+
+    // Ctrl/Cmd + S — save cloud config when vault panel is visible
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if (!panelVault.classList.contains('hidden') && selectedVaultId) {
+        e.preventDefault();
+        cloudForm.dispatchEvent(new Event('submit'));
+      }
+    }
+
+    // Ctrl/Cmd + P — push current vault
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'P') {
+      if (selectedVaultId) { e.preventDefault(); handlePush(); }
+    }
+  });
 }
 
 function toggleMobileSidebar(): void {
@@ -819,7 +879,10 @@ function registerIpcListeners(): void {
   window.obsync.on.syncComplete((data) => {
     if (data.vaultId === selectedVaultId) {
       const type = data.result.success ? 'success' : 'error';
-      showToast(data.result.message, type);
+      // Friendlier message — trim long raw messages
+      let msg = data.result.message;
+      if (msg.length > 80) msg = msg.slice(0, 77) + '...';
+      showToast(msg, type);
       loadVaults().then(() => {
         const vault = vaults.find(v => v.id === data.vaultId);
         if (vault) {
@@ -828,18 +891,31 @@ function registerIpcListeners(): void {
             : 'Never';
         }
       });
+    } else {
+      // Background vault — only show toast on error
+      if (!data.result.success) {
+        const vault = vaults.find(v => v.id === data.vaultId);
+        showToast(`${vault?.name ?? 'Vault'}: ${data.result.message}`, 'error');
+      }
     }
   });
 
   window.obsync.on.conflictDetected(({ vaultId, conflicts }) => {
-    if (vaultId === selectedVaultId) {
-      showConflictModal(vaultId, conflicts);
-    }
+    showConflictModal(vaultId, conflicts);
+    // Navigate to the vault if not already there
+    if (vaultId !== selectedVaultId) selectVault(vaultId);
   });
 
+  // Auto-sync: only show toast if there were actual changes, not on every poll
   window.obsync.on.autoSyncTriggered((data) => {
     if (data.vaultId === selectedVaultId) {
-      showToast('Auto-sync triggered — pushing changes...', 'info');
+      // Update last-synced time silently — no toast for routine auto-sync
+      loadVaults().then(() => {
+        const vault = vaults.find(v => v.id === data.vaultId);
+        if (vault?.lastSyncedAt) {
+          lastSyncedEl.textContent = new Date(vault.lastSyncedAt).toLocaleString();
+        }
+      });
     }
   });
 
@@ -880,39 +956,43 @@ async function handleRemoveVault(): Promise<void> {
   const vault = vaults.find(v => v.id === selectedVaultId);
   if (!vault) return;
 
-  const confirmed = confirm(`Remove vault "${vault.name}"? This won't delete your local files.`);
-  if (!confirmed) return;
-
-  const res = await window.obsync.vault.remove(selectedVaultId);
-  if (res.success) {
-    vaults = vaults.filter(v => v.id !== selectedVaultId);
-    selectedVaultId = null;
-    renderVaultList();
-    if (vaults.length > 0) {
-      showPanel('dashboard');
-      renderDashboard();
-    } else {
-      showPanel('welcome');
-    }
-    showToast('Vault removed', 'info');
-  } else {
-    showToast(res.error ?? 'Failed to remove vault', 'error');
-  }
+  showConfirm(
+    `Remove "${vault.name}" from Obsync? Your local files won't be deleted.`,
+    async () => {
+      const res = await window.obsync.vault.remove(selectedVaultId!);
+      if (res.success) {
+        vaults = vaults.filter(v => v.id !== selectedVaultId);
+        selectedVaultId = null;
+        renderVaultList();
+        if (vaults.length > 0) { showPanel('dashboard'); renderDashboard(); }
+        else showPanel('welcome');
+        showToast('Vault removed', 'info');
+      } else {
+        showToast(res.error ?? 'Failed to remove vault', 'error');
+      }
+    },
+    'Remove',
+    true,
+  );
 }
 
 async function handlePush(): Promise<void> {
   if (!selectedVaultId) return;
-  setButtonLoading(btnPush, true);
+  btnPush.classList.add('syncing');
+  btnPush.disabled = true;
   const res = await window.obsync.sync.push(selectedVaultId);
-  setButtonLoading(btnPush, false);
+  btnPush.classList.remove('syncing');
+  btnPush.disabled = false;
   if (!res.success) showToast(res.error ?? 'Push failed', 'error');
 }
 
 async function handlePull(): Promise<void> {
   if (!selectedVaultId) return;
-  setButtonLoading(btnPull, true);
+  btnPull.classList.add('syncing');
+  btnPull.disabled = true;
   const res = await window.obsync.sync.pull(selectedVaultId);
-  setButtonLoading(btnPull, false);
+  btnPull.classList.remove('syncing');
+  btnPull.disabled = false;
   if (!res.success && !res.data) showToast(res.error ?? 'Pull failed', 'error');
 }
 
@@ -1097,16 +1177,31 @@ async function handleShowHistory(): Promise<void> {
       </div>
     `;
 
+    // Click to show diff for this commit's changed files
+    item.addEventListener('click', () => {
+      if (selectedVaultId && commit.filesChanged > 0) {
+        // Show diff for the first changed file — best we can do without a file picker
+        historyModal.classList.add('hidden');
+        handleShowDiff(selectedVaultId, commit.hash);
+      }
+    });
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && selectedVaultId) {
+        historyModal.classList.add('hidden');
+        handleShowDiff(selectedVaultId, commit.hash);
+      }
+    });
+
     historyList.appendChild(item);
   }
 }
 
-async function handleShowDiff(vaultId: string, filePath: string): Promise<void> {
-  diffFilePath.textContent = filePath;
+async function handleShowDiff(vaultId: string, filePathOrHash: string): Promise<void> {
+  diffFilePath.textContent = filePathOrHash;
   diffViewer.innerHTML = '<div class="diff-empty">Loading diff...</div>';
   diffModal.classList.remove('hidden');
 
-  const res = await window.obsync.history.getFileDiff(vaultId, filePath);
+  const res = await window.obsync.history.getFileDiff(vaultId, filePathOrHash);
   if (!res.success || !res.data) {
     diffViewer.innerHTML = '<div class="diff-empty">Could not load diff for this file.</div>';
     return;
@@ -1254,27 +1349,26 @@ async function handleRemoveVaultById(vaultId: string): Promise<void> {
   const vault = vaults.find(v => v.id === vaultId);
   if (!vault) return;
 
-  const confirmed = confirm(`Remove vault "${vault.name}"? This won't delete your local files.`);
-  if (!confirmed) return;
-
-  showLoading('Removing vault...');
-  const res = await window.obsync.vault.remove(vaultId);
-  hideLoading();
-
-  if (res.success) {
-    vaults = vaults.filter(v => v.id !== vaultId);
-    if (selectedVaultId === vaultId) selectedVaultId = null;
-    renderVaultList();
-    if (vaults.length > 0) {
-      showPanel('dashboard');
-      renderDashboard();
-    } else {
-      showPanel('welcome');
-    }
-    showToast('Vault removed', 'info');
-  } else {
-    showToast(res.error ?? 'Failed to remove vault', 'error');
-  }
+  showConfirm(
+    `Remove "${vault.name}" from Obsync? Your local files won't be deleted.`,
+    async () => {
+      showLoading('Removing vault...');
+      const res = await window.obsync.vault.remove(vaultId);
+      hideLoading();
+      if (res.success) {
+        vaults = vaults.filter(v => v.id !== vaultId);
+        if (selectedVaultId === vaultId) selectedVaultId = null;
+        renderVaultList();
+        if (vaults.length > 0) { showPanel('dashboard'); renderDashboard(); }
+        else showPanel('welcome');
+        showToast('Vault removed', 'info');
+      } else {
+        showToast(res.error ?? 'Failed to remove vault', 'error');
+      }
+    },
+    'Remove',
+    true,
+  );
 }
 
 async function handleSyncAll(): Promise<void> {
@@ -1354,6 +1448,29 @@ function resetOAuthButton(btn: HTMLButtonElement): void {
   btn.style.color = '';
 }
 
+const PROVIDER_LABELS: Record<string, string> = {
+  github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket', 'git-custom': 'Git',
+  dropbox: 'Dropbox', googledrive: 'Google Drive', onedrive: 'OneDrive',
+  webdav: 'WebDAV', s3: 'S3',
+};
+
+function updateProviderBadge(provider: SyncProviderType | null): void {
+  let badge = document.getElementById('provider-badge');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.id = 'provider-badge';
+    badge.className = 'provider-badge';
+    const meta = document.querySelector('.vault-meta');
+    if (meta) meta.appendChild(badge);
+  }
+  if (provider) {
+    badge.textContent = PROVIDER_LABELS[provider] ?? provider;
+    badge.style.display = '';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
 function setButtonLoading(btn: HTMLButtonElement, loading: boolean): void {
   btn.classList.toggle('loading', loading);
   btn.disabled = loading;
@@ -1401,19 +1518,23 @@ async function handleLoadVersions(): Promise<void> {
     `;
     const restoreBtn = item.querySelector('button')!;
     restoreBtn.addEventListener('click', async () => {
-      const confirmed = confirm(`Restore "${filePath}" to version from ${date}? Current version will be archived.`);
-      if (!confirmed) return;
-      restoreBtn.disabled = true;
-      restoreBtn.textContent = 'Restoring...';
-      const r = await window.obsync.history.restoreVersion(selectedVaultId!, filePath, v.version);
-      if (r.success) {
-        showToast(`Restored ${filePath} to ${date}`, 'success');
-        versionsModal.classList.add('hidden');
-      } else {
-        showToast(r.error ?? 'Restore failed', 'error');
-        restoreBtn.disabled = false;
-        restoreBtn.textContent = 'Restore';
-      }
+      showConfirm(
+        `Restore "${filePath}" to version from ${date}? The current version will be archived.`,
+        async () => {
+          restoreBtn.disabled = true;
+          restoreBtn.textContent = 'Restoring...';
+          const r = await window.obsync.history.restoreVersion(selectedVaultId!, filePath, v.version);
+          if (r.success) {
+            showToast(`Restored to ${date}`, 'success');
+            versionsModal.classList.add('hidden');
+          } else {
+            showToast(r.error ?? 'Restore failed', 'error');
+            restoreBtn.disabled = false;
+            restoreBtn.textContent = 'Restore';
+          }
+        },
+        'Restore',
+      );
     });
     versionsList.appendChild(item);
   }
