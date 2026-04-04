@@ -67,10 +67,18 @@ function createWindow(): BrowserWindow {
 
   win.loadFile(path.join(__dirname, '../../../src/renderer/index.html'));
 
-  // Only open DevTools in development (not in packaged builds)
-  if (!app.isPackaged) {
-    win.webContents.openDevTools();
-  }
+  // Block all DevTools access — keyboard shortcuts and programmatic open
+  win.webContents.on('before-input-event', (_event, input) => {
+    const ctrl = input.control || input.meta;
+    if (
+      input.key === 'F12' ||
+      (ctrl && input.shift && (input.key === 'I' || input.key === 'i')) ||
+      (ctrl && input.shift && (input.key === 'J' || input.key === 'j')) ||
+      (ctrl && input.shift && (input.key === 'C' || input.key === 'c'))
+    ) {
+      _event.preventDefault();
+    }
+  });
 
   // Respect startMinimized — only show the window if not starting to tray
   if (!settings.startMinimized) {
