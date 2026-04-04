@@ -1,107 +1,268 @@
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
+import type { WebDAVClient } from 'webdav';
 import { createLogger } from '../../utils/logger.util';
-import type { 
-  ICloudProvider, 
-  CloudCredentials, 
-  SyncResult 
-} from '../../models/cloud-sync.model';
+import { PathUtils } from '../../utils/path.util';
+import { withRetry } from '../../utils/retry.util';
+import { shouldSkipDir, shouldSyncFile, collectVaultFiles } from '../../utils/obsidian-filter.util';
+import type { CloudCredentials, ICloudProvider, SyncResult } from '../../models/cloud-sync.model';
 
-const logger = createLogger('WebDAVCloudProvider');
+const logger = createLogger('WebDavCloudProvider');
 
-/** 
- * Simplified WebDAV Implementation using native HTTPS.
- * For Obsidian users (Nextcloud, etc.)
- */
-export class WebDAVCloudProvider implements ICloudProvider {
-  
-  async validate(creds: CloudCredentials): Promise<SyncResult> {
+export class WebDavCloudProvider implements ICloudProvider {
+  private clients: Map<string, WebDAVClient> = new Map();
+  onTokenRefreshed?: (newTokenJson: string) => void; // WebDAV uses basic auth, no refresh needed
+
+  async init(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
-      const resp = await this.davRequest('PROPFIND', creds);
-      if (resp.status >= 200 && resp.status < 300) {
-        return { success: true, message: 'Connected' };
-      }
-      return { success: false, message: `Failed: ${resp.status}` };
+      await this.getClient(credentials);
+      return { success: true, message: 'WebDAV connected' };
     } catch (err) {
-      return { success: false, message: err instanceof Error ? err.message : 'WebDAV connection error' };
+      return { success: false, message: `WebDAV init failed: ${err instanceof Error ? err.message : 'Unknown'}` };
     }
   }
 
-  async push(vaultPath: string, creds: CloudCredentials): Promise<SyncResult> {
+  async clone(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    if (!fs.existsSync(vaultPath)) fs.mkdirSync(vaultPath, { recursive: true });
+    return this.pull(vaultPath, credentials);
+  }
+
+  async move(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
-      // In a real implementation: Compare local vs remote modified times
-      // For this preliminary version, we'll iterate through all local files and upload
-      const files = this.getAllFiles(vaultPath);
-      let count = 0;
+      const client = await this.getClient(credentials);
+      const vaultName = path.basename(vaultPath);
+      const remoteRoot = `Obsync_${vaultName}`;
+      
+      const oldPath = `${remoteRoot}/${oldRelativePath.replace(/\\/g, '/')}`;
+      const newPath = `${remoteRoot}/${newRelativePath.replace(/\\/g, '/')}`;
+      
+      const newDir = path.dirname(newPath);
+      await this.ensureRemoteDir(client, newDir);
+
+      await client.moveFile(oldPath, newPath);
+      return { success: true, message: `Moved ${oldRelativePath} to ${newRelativePath}` };
+    } catch (err) {
+      return { success: false, message: `Move failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  async validate(credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const client = await this.getClient(credentials);
+      const res = await client.getDirectoryContents('/');
+      if (res) return { success: true, message: 'WebDAV Connection Valid' };
+      return { success: false, message: 'Failed to list directory' };
+    } catch (err) {
+      return { success: false, message: `Validation failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const client = await this.getClient(credentials);
+      const vaultName = path.basename(vaultPath);
+      const remoteRoot = `/Obsync_${vaultName}`;
+
+      const files = collectVaultFiles(vaultPath);
+      let pushed = 0;
+      const failed: string[] = [];
+
+      if (!(await client.exists(remoteRoot))) {
+        await client.createDirectory(remoteRoot);
+      }
 
       for (const filePath of files) {
-        const relativePath = path.relative(vaultPath, filePath).replace(/\\/g, '/');
-        if (relativePath.includes('.git/') || relativePath.includes('.obsidian/workspace')) continue;
-
-        const content = fs.readFileSync(filePath);
-        await this.davRequest('PUT', creds, relativePath, content);
-        count++;
+        const relativePath = PathUtils.toRelative(vaultPath, filePath);
+        const remoteFilePath = `${remoteRoot}/${relativePath}`;
+        try {
+          const remoteDir = path.dirname(remoteFilePath);
+          await this.ensureRemoteDir(client, remoteDir);
+          const content = fs.readFileSync(filePath);
+          await withRetry(() => client.putFileContents(remoteFilePath, content));
+          pushed++;
+        } catch (err) {
+          logger.error(`Failed to push ${relativePath}:`, err);
+          failed.push(relativePath);
+        }
       }
 
-      return { success: true, message: `Pushed ${count} file(s) to WebDAV`, filesChanged: count };
+      if (files.length > 0) {
+        await this.cleanupRemote(client, remoteRoot, vaultPath, files);
+      }
+
+      const msg = failed.length
+        ? `Pushed ${pushed} file(s), ${failed.length} failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '...' : ''}`
+        : `Pushed ${pushed} file(s) to WebDAV`;
+      return { success: true, message: msg, filesChanged: pushed };
     } catch (err) {
-      return { success: false, message: `WebDAV Push Failed: ${err}` };
+      logger.error('WebDAV Push Failed:', err);
+      return { success: false, message: `Push failed: ${err instanceof Error ? err.message : 'Unknown'}` };
     }
   }
 
-  async pull(vaultPath: string, creds: CloudCredentials): Promise<SyncResult> {
-    // Preliminary pull: For now, we'll just log that it's requested. 
-    // Real implementation would use PROPFIND to list and GET to download.
-    return { success: true, message: 'WebDAV Pull: Sync logic pending implementation' };
-  }
+  async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult & { entries?: any[] }> {
+    try {
+      const client = await this.getClient(credentials);
+      const vaultName = path.basename(vaultPath);
+      const remoteRoot = `Obsync_${vaultName}`;
 
-  private getAllFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
-    const files = fs.readdirSync(dirPath);
-    files.forEach((file) => {
-      const fullPath = path.join(dirPath, file);
-      if (fs.statSync(fullPath).isDirectory()) {
-        arrayOfFiles = this.getAllFiles(fullPath, arrayOfFiles);
-      } else {
-        arrayOfFiles.push(fullPath);
+      if (!(await client.exists(remoteRoot))) {
+        return { success: true, message: 'Cloud folder not found', entries: [] };
       }
-    });
-    return arrayOfFiles;
+
+      const entries: any[] = [];
+      const scanItems = async (remoteDirPath: string) => {
+        const items = await client.getDirectoryContents(remoteDirPath) as any[];
+        for (const item of items) {
+          const relPath = PathUtils.toCloudRelative(item.filename, `Obsync_${vaultName}`);
+          if (relPath === null || relPath === '') continue;
+          
+          entries.push({
+            id: item.filename,
+            path_display: relPath,
+            name: item.basename,
+            size: item.size || 0,
+            lastmod: item.lastmod,
+            '.tag': item.type === 'directory' ? 'folder' : 'file'
+          });
+
+          if (item.type === 'directory') {
+            await scanItems(item.filename);
+          }
+        }
+      };
+
+      await scanItems(remoteRoot);
+      return { success: true, message: 'Scanned WebDAV cloud state', entries };
+    } catch (err) {
+      logger.error('WebDAV Fetch Failed:', err);
+      return { success: false, message: `Cloud scan failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
   }
 
-  private davRequest(method: string, creds: CloudCredentials, remotePath = '', body?: Buffer): Promise<{ status: number }> {
-    return new Promise((resolve, reject) => {
-      const https = require('https') as typeof import('https');
-      const http = require('http') as typeof import('http');
+  async pullFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const client = await this.getClient(credentials);
+      const vaultName = path.basename(vaultPath);
+      const remotePath = `/Obsync_${vaultName}/${PathUtils.normalize(relativePath)}`;
       
-      const baseUrl = creds.meta['repoUrl'] || ''; // WebDAV Server URL
-      if (!baseUrl) {
-        resolve({ status: 400 }); // Bad request
+      const content = await client.getFileContents(remotePath);
+      const localPath = path.join(vaultPath, relativePath);
+      const localDir = path.dirname(localPath);
+      if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+      
+      fs.writeFileSync(localPath, content as Buffer);
+      return { success: true, message: `Pulled ${relativePath}` };
+    } catch (err) {
+      return { success: false, message: `Pull failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  async pushFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const client = await this.getClient(credentials);
+      const vaultName = path.basename(vaultPath);
+      const remotePath = `/Obsync_${vaultName}/${PathUtils.normalize(relativePath)}`;
+      const localPath = path.join(vaultPath, relativePath);
+      
+      if (!fs.existsSync(localPath)) return { success: false, message: 'Local file missing' };
+      
+      await this.ensureRemoteDir(client, path.dirname(remotePath));
+      const content = fs.readFileSync(localPath);
+      await withRetry(() => client.putFileContents(remotePath, content));
+      return { success: true, message: `Pushed ${relativePath}` };
+    } catch (err) {
+      return { success: false, message: `Push failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  async delete(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const client = await this.getClient(credentials);
+      const vaultName = path.basename(vaultPath);
+      const remotePath = `/Obsync_${vaultName}/${PathUtils.normalize(relativePath)}`;
+      
+      if (await client.exists(remotePath)) {
+        await client.deleteFile(remotePath);
+      }
+      return { success: true, message: `Deleted ${relativePath}` };
+    } catch (err) {
+      return { success: false, message: `Delete failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  private async getClient(credentials: CloudCredentials): Promise<WebDAVClient> {
+    const key = `${credentials.provider}_${credentials.token}`;
+    if (this.clients.has(key)) return this.clients.get(key)!;
+
+    let url = '';
+    let username = '';
+    let password = '';
+
+    try {
+      const data = JSON.parse(credentials.token);
+      url = data.url;
+      username = data.username;
+      password = data.password;
+    } catch {
+      throw new Error('Invalid WebDAV credentials format');
+    }
+
+    const { createClient } = (await import('webdav')) as any;
+    const client = createClient(url, { username, password });
+    this.clients.set(key, client);
+    return client;
+  }
+
+  private async ensureRemoteDir(client: WebDAVClient, dirPath: string): Promise<void> {
+    if (dirPath === '/' || dirPath === '.') return;
+    if (await client.exists(dirPath)) return;
+    
+    // Ensure parent
+    await this.ensureRemoteDir(client, path.dirname(dirPath));
+    await client.createDirectory(dirPath);
+  }
+
+  private async cleanupRemote(client: WebDAVClient, rootPath: string, localVaultPath: string, localFiles: string[]): Promise<void> {
+    const localSet = new Set(localFiles.map(f => PathUtils.toRelative(localVaultPath, f)));
+    const vaultName = path.basename(localVaultPath);
+    const prefix = `Obsync_${vaultName}/`;
+
+    const scanAndDelete = async (remotePath: string) => {
+      let items: any[];
+      try {
+        items = await client.getDirectoryContents(remotePath) as any[];
+      } catch {
         return;
       }
-      const fullUrl = new URL(path.join(baseUrl, remotePath).replace(/\\/g, '/'));
-      
-      const client = fullUrl.protocol === 'https:' ? https : http;
-      const auth = Buffer.from(creds.token).toString('base64'); // For WebDAV: 'user:pass' encoded
 
-      const req = client.request({
-        hostname: fullUrl.hostname,
-        port: fullUrl.port || (fullUrl.protocol === 'https:' ? 443 : 80),
-        path: fullUrl.pathname + fullUrl.search,
-        method: method,
-        headers: {
-          'Authorization': `Basic ${auth}`,
-          'User-Agent': 'Obsync/1.0.0',
-          'Content-Length': body ? body.length : 0,
-          'Depth': method === 'PROPFIND' ? '1' : undefined,
-        },
-      }, (res) => {
-        res.resume();
-        resolve({ status: res.statusCode ?? 0 });
-      });
+      for (const item of items) {
+        // Derive relPath by stripping everything up to and including "Obsync_VaultName/"
+        const idx = item.filename.indexOf(prefix);
+        const rel = idx >= 0 ? PathUtils.normalize(item.filename.substring(idx + prefix.length)) : '';
+        if (!rel) continue;
 
-      req.on('error', reject);
-      if (body) req.write(body);
-      req.end();
-    });
+        if (item.type === 'directory') {
+          const localHasFolder = Array.from(localSet).some(f => f.startsWith(`${rel}/`));
+          if (!localHasFolder) {
+            logger.info(`Mirroring: Deleting WebDAV folder ${rel}`);
+            await client.deleteFile(item.filename);
+          } else {
+            await scanAndDelete(item.filename);
+          }
+        } else {
+          if (!localSet.has(rel)) {
+            logger.info(`Mirroring: Deleting WebDAV file ${rel}`);
+            await client.deleteFile(item.filename);
+          }
+        }
+      }
+    };
+
+    await scanAndDelete(rootPath);
+  }
+
+  private getAllLocalFiles(vaultPath: string, dirPath: string = vaultPath, result: string[] = []): string[] {
+    return collectVaultFiles(vaultPath, dirPath, result);
   }
 }

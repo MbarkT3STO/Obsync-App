@@ -2,11 +2,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import { createLogger } from '../../utils/logger.util';
+import { PathUtils } from '../../utils/path.util';
+import { withRetry } from '../../utils/retry.util';
+import { shouldSkipDir, shouldSyncFile, collectVaultFiles } from '../../utils/obsidian-filter.util';
 import type { CloudCredentials, ICloudProvider, SyncResult } from '../../models/cloud-sync.model';
 
 const logger = createLogger('OneDriveCloudProvider');
 
 export class OneDriveCloudProvider implements ICloudProvider {
+  onTokenRefreshed?: (newTokenJson: string) => void;
   async init(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     return { success: true, message: 'OneDrive ready for sync' };
   }
@@ -35,6 +39,137 @@ export class OneDriveCloudProvider implements ICloudProvider {
     }
   }
 
+  async getChanges(vaultPath: string, credentials: CloudCredentials, cursor?: string): Promise<SyncResult & { cursor?: string; entries?: any[] }> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const vaultName = path.basename(vaultPath);
+      const rootPath = `Obsync_${vaultName}`;
+
+      // Validate cursor — must be a full HTTPS URL (OneDrive deltaLink).
+      // If it's missing, empty, or a leftover relative path from an old version, start fresh.
+      const isValidCursor = (c?: string): boolean => {
+        if (!c) return false;
+        try { return new URL(c).protocol === 'https:'; } catch { return false; }
+      };
+
+      let firstUrl: string;
+      if (isValidCursor(cursor)) {
+        firstUrl = cursor!;
+      } else {
+        if (cursor) logger.warn(`OneDrive: discarding invalid cursor "${cursor.slice(0, 40)}..." — starting fresh`);
+        const encodedRoot = encodeURIComponent(rootPath);
+        firstUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/${encodedRoot}:/delta`;
+      }
+
+      const allEntries: any[] = [];
+      let nextUrl: string | null = firstUrl;
+      let finalDeltaLink: string | undefined;
+
+      while (nextUrl) {
+        const res = await this.graphRequest('GET', nextUrl, token, undefined, undefined, true);
+
+        if (res.status === 410) {
+          logger.warn('OneDrive delta token expired (410), restarting full delta scan');
+          return this.getChanges(vaultPath, credentials, undefined);
+        }
+
+        if (res.status === 400) {
+          logger.warn(`OneDrive delta 400: ${JSON.stringify(res.data)} — falling back to full scan`);
+          return this.getChanges(vaultPath, credentials, undefined);
+        }
+
+        if (res.status !== 200) {
+          return { success: false, message: `OneDrive Delta Error: ${res.status} — ${JSON.stringify(res.data)}` };
+        }
+
+        allEntries.push(...(res.data.value || []));
+
+        if (res.data['@odata.deltaLink']) {
+          finalDeltaLink = res.data['@odata.deltaLink'];
+          break;
+        }
+
+        nextUrl = res.data['@odata.nextLink'] || null;
+      }
+
+      const mappedEntries = allEntries.map((item: any) => {
+        if (!item) return null;
+        const isDeleted = !!item.deleted;
+        const parentPath = PathUtils.decodeCloudPath(item.parentReference?.path || '');
+        const cloudPath = parentPath ? `${parentPath}/${item.name}` : item.name;
+        const relPath = PathUtils.toCloudRelative(cloudPath, rootPath);
+        if (relPath === null) return null;
+        return {
+          '.tag': isDeleted ? 'deleted' : (item.folder ? 'folder' : 'file'),
+          id: item.id,
+          name: item.name,
+          path_display: relPath,
+          lastmod: item.lastModifiedDateTime,
+          size: item.size ?? 0,
+        };
+      }).filter(Boolean);
+
+      return {
+        success: true,
+        message: `${mappedEntries.length} change(s) fetched`,
+        cursor: finalDeltaLink,
+        entries: mappedEntries,
+      };
+    } catch (err) {
+      return { success: false, message: `Delta sync failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  async pullFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const vaultName = path.basename(vaultPath);
+      const rootPath = `Obsync_${vaultName}`;
+      const onedrivePath = `${rootPath}/${relativePath.replace(/\\/g, '/')}`;
+      const encodedPath = encodeURIComponent(onedrivePath);
+      
+      const content = await this.downloadFile(`me/drive/root:/${encodedPath}:/content`, token);
+      const localPath = path.join(vaultPath, relativePath);
+      const localDir = path.dirname(localPath);
+      
+      if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+      
+      const tempPath = `${localPath}.tmp`;
+      fs.writeFileSync(tempPath, content);
+      fs.renameSync(tempPath, localPath);
+      
+      return { success: true, message: `Pulled ${relativePath}` };
+    } catch (err) {
+      return { success: false, message: `Pull file failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  async move(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const vaultName = path.basename(vaultPath);
+      const rootPath = `Obsync_${vaultName}`;
+      const oldPath = `${rootPath}/${oldRelativePath.replace(/\\/g, '/')}`;
+      const newPath = `${rootPath}/${newRelativePath.replace(/\\/g, '/')}`;
+      const oldEncoded = encodeURIComponent(oldPath);
+      const newDir = path.dirname(newPath);
+      const newName = path.basename(newPath);
+
+      // In OneDrive, move/rename is done by PATCHing the parentReference and name
+      const res = await this.graphRequest('PATCH', `me/drive/root:/${oldEncoded}`, token, {
+        parentReference: { path: `/drive/root:/${newDir}` },
+        name: newName
+      });
+
+      if (res.status === 200) {
+        return { success: true, message: `Moved ${oldRelativePath} to ${newRelativePath}` };
+      }
+      return { success: false, message: `OneDrive move error: ${JSON.stringify(res.data)}` };
+    } catch (err) {
+      return { success: false, message: `Move failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
   async validate(credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
@@ -53,25 +188,32 @@ export class OneDriveCloudProvider implements ICloudProvider {
       const token = await this.getValidToken(credentials);
       const vaultName = path.basename(vaultPath);
       const rootPath = `Obsync_${vaultName}`;
-      
-      const files = this.getAllLocalFiles(vaultPath);
+
+      const files = collectVaultFiles(vaultPath);
       let pushed = 0;
+      const failed: string[] = [];
 
       for (const filePath of files) {
         const relativePath = path.relative(vaultPath, filePath).replace(/\\/g, '/');
-        if (relativePath.includes('.git/') || relativePath.includes('.obsidian/workspace')) continue;
-
-        const onedrivePath = `${rootPath}/${relativePath}`;
-        const content = fs.readFileSync(filePath);
-        
-        await this.uploadFile(onedrivePath, content, token);
-        pushed++;
+        try {
+          const onedrivePath = `${rootPath}/${relativePath}`;
+          const content = fs.readFileSync(filePath);
+          await this.uploadFile(onedrivePath, content, token);
+          pushed++;
+        } catch (err) {
+          logger.error(`Failed to push ${relativePath}:`, err);
+          failed.push(relativePath);
+        }
       }
- 
-      // Cloud Mirroring: Cleanup remote files that were deleted/renamed locally
-      await this.cleanupRemote(rootPath, vaultPath, token, files);
- 
-      return { success: true, message: `Pushed ${pushed} file(s) to OneDrive (Cloud Mirrored)`, filesChanged: pushed };
+
+      if (files.length > 0) {
+        await this.cleanupRemote(rootPath, vaultPath, token, files);
+      }
+
+      const msg = failed.length
+        ? `Pushed ${pushed} file(s), ${failed.length} failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '...' : ''}`
+        : `Pushed ${pushed} file(s) to OneDrive`;
+      return { success: true, message: msg, filesChanged: pushed };
     } catch (err) {
       logger.error('OneDrive Push Failed:', err);
       return { success: false, message: `Push failed: ${err instanceof Error ? err.message : 'Unknown'}` };
@@ -79,36 +221,39 @@ export class OneDriveCloudProvider implements ICloudProvider {
   }
 
   private async cleanupRemote(rootPath: string, localVaultPath: string, token: string, localFiles: string[]): Promise<void> {
-    const localRelativeFiles = new Set(localFiles.map(f => path.relative(localVaultPath, f).replace(/\\/g, '/')));
-    
-    const syncCleanup = async (currentPath: string) => {
-      const res = await this.graphRequest('GET', `me/drive/root:/${currentPath}:/children`, token);
+    const localSet = new Set(
+      localFiles.map(f => path.relative(localVaultPath, f).replace(/\\/g, '/'))
+    );
+
+    const scanAndDelete = async (currentPath: string) => {
+      const encodedPath = currentPath.split('/').map(p => encodeURIComponent(p)).join('/');
+      const res = await this.graphRequest('GET', `me/drive/root:/${encodedPath}:/children`, token);
       if (res.status !== 200 || !res.data.value) return;
-      
+
       for (const item of res.data.value) {
-        const itemRelativePath = item.parentReference.path.includes(rootPath)
-          ? item.parentReference.path.split(`${rootPath}:/`)[1] || ''
-          : '';
-        const relPath = itemRelativePath ? `${itemRelativePath}/${item.name}` : item.name;
-        
+        // Build relPath from the folder we're currently scanning + item name
+        // currentPath is like "Obsync_VaultName/subfolder", rootPath is "Obsync_VaultName"
+        const currentRel = currentPath.substring(rootPath.length).replace(/^\//, '');
+        const relPath = currentRel ? `${currentRel}/${item.name}` : item.name;
+
         if (item.folder) {
-          const localHasFolder = [...localRelativeFiles].some(f => f.startsWith(`${relPath}/`));
+          const localHasFolder = Array.from(localSet).some(f => f.startsWith(`${relPath}/`));
           if (!localHasFolder) {
             logger.info(`Mirroring: Deleting OneDrive folder ${relPath}`);
             await this.graphRequest('DELETE', `me/drive/items/${item.id}`, token);
           } else {
-            await syncCleanup(`${rootPath}/${relPath}`);
+            await scanAndDelete(`${rootPath}/${relPath}`);
           }
         } else {
-          if (!localRelativeFiles.has(relPath)) {
+          if (!localSet.has(relPath)) {
             logger.info(`Mirroring: Deleting OneDrive file ${relPath}`);
             await this.graphRequest('DELETE', `me/drive/items/${item.id}`, token);
           }
         }
       }
     };
-    
-    await syncCleanup(rootPath);
+
+    await scanAndDelete(rootPath);
   }
  
   async pushFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
@@ -121,83 +266,50 @@ export class OneDriveCloudProvider implements ICloudProvider {
       if (!fs.existsSync(fullPath)) return { success: false, message: 'Local file not found' };
       
       const content = fs.readFileSync(fullPath);
-      await this.uploadFile(onedrivePath, content, token);
+      await withRetry(() => this.uploadFile(onedrivePath, content, token));
       return { success: true, message: `Pushed ${relativePath}` };
     } catch (err) {
       return { success: false, message: `Push file failed: ${err instanceof Error ? err.message : 'Unknown'}` };
     }
   }
 
-  async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
+  async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult & { entries?: any[] }> {
     try {
       const token = await this.getValidToken(credentials);
       const vaultName = path.basename(vaultPath);
       const rootPath = `Obsync_${vaultName}`;
 
-      let pulled = 0;
-      const remotePaths = new Set<string>();
-
+      const entries: any[] = [];
       const syncFolder = async (currentPath: string) => {
-        const endpoint = currentPath === rootPath 
-          ? `me/drive/root:/${currentPath}:/children` 
-          : `me/drive/root:/${currentPath}:/children`;
-          
+        const endpoint = `me/drive/root:/${currentPath}:/children`;
         const res = await this.graphRequest('GET', endpoint, token);
         
-        if (res.status === 404) return; // Folder doesn't exist yet
+        if (res.status === 404) return;
         if (!res.data.value) return;
 
         for (const item of res.data.value) {
-          const itemRelativePath = item.parentReference.path.includes(rootPath)
-            ? item.parentReference.path.split(`${rootPath}:/`)[1] || ''
-            : '';
+          const cloudPath = PathUtils.decodeCloudPath(item.parentReference.path) + '/' + item.name;
+          const relativePath = PathUtils.toCloudRelative(cloudPath, rootPath);
+          if (relativePath === null) continue;
           
-          const relativePath = itemRelativePath ? `${itemRelativePath}/${item.name}` : item.name;
-          remotePaths.add(relativePath);
-          const localFilePath = path.join(vaultPath, relativePath);
+          entries.push({
+            id: item.id,
+            path_display: relativePath,
+            name: item.name,
+            size: item.size || 0,
+            lastmod: item.lastModifiedDateTime,
+            '.tag': item.folder ? 'folder' : 'file'
+          });
 
           if (item.folder) {
-            if (!fs.existsSync(localFilePath)) fs.mkdirSync(localFilePath, { recursive: true });
             await syncFolder(`${rootPath}/${relativePath}`);
-          } else {
-            let shouldDownload = !fs.existsSync(localFilePath);
-            if (!shouldDownload) {
-              const localStat = fs.statSync(localFilePath);
-              const remoteTime = new Date(item.lastModifiedDateTime).getTime();
-              if (remoteTime > localStat.mtime.getTime() + 2000) {
-                shouldDownload = true;
-              }
-            }
-
-            if (shouldDownload) {
-              const content = await this.downloadFile(item.id, token);
-              fs.writeFileSync(localFilePath, content);
-              pulled++;
-            }
           }
         }
       };
 
       await syncFolder(rootPath);
  
-      // Safety Cleanup: Remove local files that don't exist in cloud (Deletions/Renames)
-      const localFiles = this.getAllLocalFiles(vaultPath);
-      const now = Date.now();
-      
-      for (const localFile of localFiles) {
-        const relativePath = path.relative(vaultPath, localFile).replace(/\\/g, '/');
-        if (relativePath.includes('.git/') || relativePath.includes('.obsidian/workspace')) continue;
-        
-        if (!remotePaths.has(relativePath)) {
-          const stats = fs.statSync(localFile);
-          if (now - stats.mtimeMs > 10000) {
-            logger.info(`Pull Sync: Deleting local file missing from OneDrive: ${relativePath}`);
-            fs.unlinkSync(localFile);
-          }
-        }
-      }
- 
-      return { success: true, message: `Pulled ${pulled} file(s) from OneDrive`, filesChanged: pulled };
+      return { success: true, message: `Scanned ${entries.length} items from OneDrive`, entries };
     } catch (err) {
       logger.error('OneDrive Pull Failed:', err);
       return { success: false, message: `Pull failed: ${err instanceof Error ? err.message : 'Unknown'}` };
@@ -205,13 +317,84 @@ export class OneDriveCloudProvider implements ICloudProvider {
   }
 
   private async uploadFile(onedrivePath: string, content: Buffer, token: string): Promise<void> {
-    const encodedPath = encodeURIComponent(onedrivePath);
-    const res = await this.graphRequest('PUT', `me/drive/root:/${encodedPath}:/content`, token, content, {
-      'Content-Type': 'application/octet-stream'
-    });
-    if (res.status >= 400) {
-      throw new Error(`OneDrive Upload Error (${res.status}): ${JSON.stringify(res.data)}`);
+    const CHUNK_SIZE = 320 * 1024; // OneDrive requires multiples of 320 KB
+    const fileSize = content.length;
+
+    // ── Simple upload for files ≤ 4 MB ──────────────────────────────────────
+    if (fileSize <= 4 * 1024 * 1024) {
+      const encodedPath = onedrivePath.split('/').map(p => encodeURIComponent(p)).join('/');
+      const res = await this.graphRequest('PUT', `me/drive/root:/${encodedPath}:/content`, token, content, {
+        'Content-Type': 'application/octet-stream',
+      });
+      if (res.status >= 400) {
+        throw new Error(`OneDrive Simple Upload Error (${res.status}): ${JSON.stringify(res.data)}`);
+      }
+      return;
     }
+
+    // ── Resumable upload session for large files ─────────────────────────────
+    logger.info(`Starting chunked upload for ${onedrivePath} (${fileSize} bytes)`);
+    const encodedPath = onedrivePath.split('/').map(p => encodeURIComponent(p)).join('/');
+    const sessionRes = await this.graphRequest(
+      'POST',
+      `me/drive/root:/${encodedPath}:/createUploadSession`,
+      token,
+      { item: { '@microsoft.graph.conflictBehavior': 'replace' } },
+    );
+
+    if (sessionRes.status !== 200) {
+      throw new Error(`Failed to create OneDrive upload session: ${JSON.stringify(sessionRes.data)}`);
+    }
+
+    const uploadUrl: string = sessionRes.data.uploadUrl;
+    let start = 0;
+
+    while (start < fileSize) {
+      const end = Math.min(start + CHUNK_SIZE, fileSize);
+      const chunk = content.slice(start, end);
+      const range = `bytes ${start}-${end - 1}/${fileSize}`;
+
+      // The uploadUrl is pre-authenticated — sending Authorization here causes 401.
+      const chunkRes = await this.uploadChunk(uploadUrl, chunk, range);
+
+      if (chunkRes.status !== 202 && chunkRes.status !== 201 && chunkRes.status !== 200) {
+        throw new Error(`OneDrive Chunk Upload Failed at ${range}: ${JSON.stringify(chunkRes.data)}`);
+      }
+      start = end;
+    }
+  }
+
+  /** Sends a single chunk to a pre-authenticated OneDrive upload session URL.
+   *  Must NOT include an Authorization header — the URL itself carries the credentials. */
+  private uploadChunk(uploadUrl: string, chunk: Buffer, range: string): Promise<{ status: number; data: any }> {
+    return new Promise((resolve, reject) => {
+      const url = new URL(uploadUrl);
+      const options = {
+        hostname: url.hostname,
+        path: url.pathname + url.search,
+        method: 'PUT',
+        headers: {
+          'Content-Length': chunk.length.toString(),
+          'Content-Range': range,
+          'Content-Type': 'application/octet-stream',
+        },
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (c) => (data += c));
+        res.on('end', () => {
+          try {
+            resolve({ status: res.statusCode ?? 0, data: data ? JSON.parse(data) : {} });
+          } catch {
+            resolve({ status: res.statusCode ?? 0, data });
+          }
+        });
+      });
+      req.on('error', reject);
+      req.write(chunk);
+      req.end();
+    });
   }
 
   private async downloadFile(itemId: string, token: string): Promise<Buffer> {
@@ -247,18 +430,42 @@ export class OneDriveCloudProvider implements ICloudProvider {
     });
   }
 
-  private async graphRequest(method: string, endpoint: string, token: string, body?: any, extraHeaders?: any): Promise<any> {
+  private async graphRequest(method: string, endpoint: string, token: string, body?: any, extraHeaders?: any, isFullUrl = false): Promise<any> {
     return new Promise((resolve, reject) => {
-      const options = {
-        hostname: 'graph.microsoft.com',
-        path: `/v1.0/${endpoint}`,
-        method: method,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'User-Agent': 'Obsync/1.0.0',
-          ...extraHeaders
-        }
-      };
+      let options: any;
+
+      if (isFullUrl) {
+        const url = new URL(endpoint);
+        options = {
+          hostname: url.hostname,
+          path: url.pathname + url.search,
+          method: method,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'User-Agent': 'Obsync/1.0.0',
+            ...(body && typeof body === 'object' && !(body instanceof Buffer)
+              ? { 'Content-Type': 'application/json' }
+              : {}),
+            ...extraHeaders,
+          },
+        };
+      } else {
+        const encodedEndpoint = endpoint.split('/').map(part => {
+          return part.includes('%') ? part : encodeURIComponent(part);
+        }).join('/').replace(/%3A/g, ':');
+
+        options = {
+          hostname: 'graph.microsoft.com',
+          path: `/v1.0/${encodedEndpoint}`,
+          method: method,
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'User-Agent': 'Obsync/1.0.0',
+            'Content-Type': body && typeof body === 'object' && !(body instanceof Buffer) ? 'application/json' : '',
+            ...extraHeaders
+          }
+        };
+      }
 
       const req = https.request(options, (res) => {
         let data = '';
@@ -273,7 +480,13 @@ export class OneDriveCloudProvider implements ICloudProvider {
         });
       });
       req.on('error', reject);
-      if (body) req.write(body);
+      if (body) {
+        if (typeof body === 'object' && !(body instanceof Buffer)) {
+          req.write(JSON.stringify(body));
+        } else {
+          req.write(body);
+        }
+      }
       req.end();
     });
   }
@@ -288,6 +501,14 @@ export class OneDriveCloudProvider implements ICloudProvider {
 
       logger.info('OneDrive token expired, refreshing...');
       const refreshed = await this.refreshOAuthToken(data.refresh_token);
+      // Persist the refreshed token
+      const newTokenJson = JSON.stringify({
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token || data.refresh_token,
+        expires_in: refreshed.expires_in,
+        expires_at: Date.now() + ((refreshed.expires_in ?? 3600) * 1000),
+      });
+      this.onTokenRefreshed?.(newTokenJson);
       return refreshed.access_token;
     } catch {
       return credentials.token;
@@ -331,16 +552,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
     });
   }
 
-  private getAllLocalFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
-    const files = fs.readdirSync(dirPath);
-    files.forEach((file: string) => {
-      const fullPath = path.join(dirPath, file);
-      if (fs.statSync(fullPath).isDirectory()) {
-        arrayOfFiles = this.getAllLocalFiles(fullPath, arrayOfFiles);
-      } else {
-        arrayOfFiles.push(fullPath);
-      }
-    });
-    return arrayOfFiles;
+  private getAllLocalFiles(vaultPath: string, dirPath: string = vaultPath, result: string[] = []): string[] {
+    return collectVaultFiles(vaultPath, dirPath, result);
   }
 }

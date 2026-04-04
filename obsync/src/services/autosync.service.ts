@@ -2,6 +2,7 @@ import chokidar from 'chokidar';
 import path from 'path';
 import { BrowserWindow } from 'electron';
 import { createLogger } from '../utils/logger.util';
+import { getChokidarIgnorePatterns, shouldSyncFile } from '../utils/obsidian-filter.util';
 import type { FSWatcher } from 'chokidar';
 import type { AutoSyncConfig } from '../models/history.model';
 import type { StorageService } from './storage.service';
@@ -43,13 +44,7 @@ export class AutoSyncService {
 
     //── 1. Local Files Watcher (Chokidar) ────────────────────────────────────
     const watcher: FSWatcher = chokidar.watch(vault.localPath, {
-      ignored: [
-        /(^|[/\\])\../,
-        /\.git[/\\]/,
-        /node_modules/,
-        /\.obsidian[/\\]workspace/,
-        /\.obsidian[/\\]workspace-mobile/,
-      ],
+      ignored: getChokidarIgnorePatterns(),
       persistent: true,
       ignoreInitial: true,
       awaitWriteFinish: { stabilityThreshold: 1500, pollInterval: 200 },
@@ -68,7 +63,8 @@ export class AutoSyncService {
     // Process queued actions
     const triggerLocalAction = (action: 'push' | 'delete', eventPath: string) => {
       const relativePath = path.relative(vault.localPath, eventPath).replace(/\\/g, '/');
-      if (relativePath.includes('.git/') || relativePath.includes('.obsidian/workspace')) return;
+      // Use the shared filter — only queue files we actually want to sync
+      if (action === 'push' && !shouldSyncFile(relativePath)) return;
 
       // Queue the action
       entry.pendingActions.set(relativePath, action);

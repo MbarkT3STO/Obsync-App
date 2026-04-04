@@ -13,6 +13,7 @@ const logger = createLogger('GitCloudProvider');
 
 /** Implementation for all Git-based services (GitHub, GitLab, Self-hosted) */
 export class GitCloudProvider implements ICloudProvider {
+  onTokenRefreshed?: (newTokenJson: string) => void; // Git uses PATs, no refresh needed
   
   async validate(creds: CloudCredentials): Promise<SyncResult> {
     try {

@@ -2,6 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as https from 'https';
 import { createLogger } from '../../utils/logger.util';
+import { PathUtils } from '../../utils/path.util';
+import { withRetry } from '../../utils/retry.util';
+import { shouldSkipDir, shouldSyncFile, collectVaultFiles } from '../../utils/obsidian-filter.util';
 import type { CloudCredentials, ICloudProvider, SyncResult } from '../../models/cloud-sync.model';
 
 const logger = createLogger('DropboxCloudProvider');
@@ -12,30 +15,43 @@ interface DropboxApiResponse {
 }
 
 export class DropboxCloudProvider implements ICloudProvider {
+  onTokenRefreshed?: (newTokenJson: string) => void;
   async getChanges(vaultPath: string, credentials: CloudCredentials, cursor?: string): Promise<SyncResult & { cursor?: string; entries?: any[] }> {
     try {
       const token = await this.getValidToken(credentials);
       const vaultName = path.basename(vaultPath);
       const rootDir = `/Obsync_${vaultName}`;
-      
+
       let res;
       if (cursor) {
         res = await this.apiPost('files/list_folder/continue', token, { cursor });
+        // Expired or invalid cursor — reset and do a full listing
+        if (res.status === 400 || res.status === 401 || res.data?.error?.['.tag'] === 'reset') {
+          logger.warn(`Dropbox cursor invalid (${res.status}) — restarting full listing`);
+          res = await this.apiPost('files/list_folder', token, { path: rootDir, recursive: true });
+        }
       } else {
-        // Initial cursor from root
         res = await this.apiPost('files/list_folder', token, { path: rootDir, recursive: true });
       }
-      
+
       if (res.status !== 200) {
         return { success: false, message: `Dropbox Delta Error: ${res.status}` };
       }
-      
+
       const { entries, cursor: nextCursor, has_more } = res.data;
-      return { 
-        success: true, 
-        message: 'Changes fetched', 
-        cursor: nextCursor, 
-        entries: entries 
+
+      const mappedEntries = (entries as any[]).map((entry: any) => {
+        if (!entry) return null;
+        const relPath = PathUtils.toCloudRelative(entry.path_display || '', `Obsync_${vaultName}`);
+        if (relPath === null) return null;
+        return { ...entry, path_display: relPath };
+      }).filter(Boolean);
+
+      return {
+        success: true,
+        message: 'Changes fetched',
+        cursor: nextCursor,
+        entries: mappedEntries,
       };
     } catch (err) {
       return { success: false, message: `Delta sync failed: ${err instanceof Error ? err.message : 'Unknown'}` };
@@ -78,6 +94,31 @@ export class DropboxCloudProvider implements ICloudProvider {
    * but we can use paths.
    */
 
+  async move(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const vaultName = path.basename(vaultPath);
+      const rootDir = `/Obsync_${vaultName}`;
+      const fromPath = `${rootDir}/${oldRelativePath.replace(/\\/g, '/')}`;
+      const toPath = `${rootDir}/${newRelativePath.replace(/\\/g, '/')}`;
+
+      const res = await this.apiPost('files/move_v2', token, {
+        from_path: fromPath,
+        to_path: toPath,
+        allow_shared_folder: true,
+        autorename: false,
+        allow_ownership_transfer: false
+      });
+
+      if (res.status === 200) {
+        return { success: true, message: `Moved ${oldRelativePath} to ${newRelativePath}` };
+      }
+      return { success: false, message: `Dropbox move error: ${JSON.stringify(res.data)}` };
+    } catch (err) {
+      return { success: false, message: `Move failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
   async validate(credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
@@ -96,26 +137,31 @@ export class DropboxCloudProvider implements ICloudProvider {
       const token = await this.getValidToken(credentials);
       const vaultName = path.basename(vaultPath);
       const rootDir = `/Obsync_${vaultName}`;
-      
-      const files = this.getAllLocalFiles(vaultPath);
+
+      const files = collectVaultFiles(vaultPath);
       let pushed = 0;
+      const failed: string[] = [];
 
       for (const filePath of files) {
         const relativePath = path.relative(vaultPath, filePath).replace(/\\/g, '/');
-        if (relativePath.includes('.git/') || relativePath.includes('.obsidian/workspace')) continue;
-
         const dropboxPath = `${rootDir}/${relativePath}`;
-        const content = fs.readFileSync(filePath);
-        
-        logger.info(`Pushing file to Dropbox: ${dropboxPath}`);
-        await this.uploadFile(dropboxPath, content, token);
-        pushed++;
+        try {
+          const content = fs.readFileSync(filePath);
+          logger.info(`Pushing to Dropbox: ${dropboxPath}`);
+          await this.uploadFile(dropboxPath, content, token);
+          pushed++;
+        } catch (err) {
+          logger.error(`Failed to push ${relativePath}:`, err);
+          failed.push(relativePath);
+        }
       }
- 
-      // Cloud Mirroring: Cleanup remote files that were deleted/renamed locally
+
       await this.cleanupRemote(rootDir, vaultPath, token, files);
- 
-      return { success: true, message: `Pushed ${pushed} file(s) to Dropbox (Cloud Mirrored)`, filesChanged: pushed };
+
+      const msg = failed.length
+        ? `Pushed ${pushed} file(s), ${failed.length} failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '...' : ''}`
+        : `Pushed ${pushed} file(s) to Dropbox`;
+      return { success: true, message: msg, filesChanged: pushed };
     } catch (err) {
       logger.error('Dropbox Push Failed:', err);
       return { success: false, message: `Push failed: ${err instanceof Error ? err.message : 'Unknown'}` };
@@ -123,33 +169,38 @@ export class DropboxCloudProvider implements ICloudProvider {
   }
 
   private async cleanupRemote(rootDir: string, localVaultPath: string, token: string, localFiles: string[]): Promise<void> {
-    const localRelativeFiles = new Set(localFiles.map(f => path.relative(localVaultPath, f).replace(/\\/g, '/')));
-    
-    const syncCleanup = async (dbxPath: string) => {
-      const res = await this.apiPost('files/list_folder', token, { path: dbxPath });
+    // Dropbox normalizes all paths to lowercase — match that when comparing
+    const localSet = new Set(
+      localFiles.map(f => path.relative(localVaultPath, f).replace(/\\/g, '/').toLowerCase())
+    );
+
+    const scanAndDelete = async (dbxPath: string) => {
+      const res = await this.apiPost('files/list_folder', token, { path: dbxPath, recursive: false });
       if (res.status !== 200) return;
-      
+
       for (const entry of res.data.entries) {
-        const relPath = entry.path_display.substring(rootDir.length + 1);
-        
+        // Strip the root prefix to get the vault-relative path, then lowercase
+        const relPath = entry.path_lower.substring(rootDir.toLowerCase().length + 1);
+        if (!relPath) continue;
+
         if (entry['.tag'] === 'folder') {
-          const localHasFolder = [...localRelativeFiles].some(f => f.startsWith(`${relPath}/`));
+          const localHasFolder = Array.from(localSet).some(f => f.startsWith(`${relPath}/`));
           if (!localHasFolder) {
             logger.info(`Mirroring: Deleting Dropbox folder ${relPath}`);
             await this.apiPost('files/delete_v2', token, { path: entry.path_display });
           } else {
-            await syncCleanup(entry.path_display);
+            await scanAndDelete(entry.path_display);
           }
         } else {
-          if (!localRelativeFiles.has(relPath)) {
+          if (!localSet.has(relPath)) {
             logger.info(`Mirroring: Deleting Dropbox file ${relPath}`);
             await this.apiPost('files/delete_v2', token, { path: entry.path_display });
           }
         }
       }
     };
-    
-    await syncCleanup(rootDir);
+
+    await scanAndDelete(rootDir);
   }
  
   async pushFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
@@ -161,86 +212,49 @@ export class DropboxCloudProvider implements ICloudProvider {
       if (!fs.existsSync(fullPath)) return { success: false, message: 'Local file not found' };
       
       const content = fs.readFileSync(fullPath);
-      await this.uploadFile(dbxPath, content, token);
+      await withRetry(() => this.uploadFile(dbxPath, content, token));
       return { success: true, message: `Pushed ${relativePath}` };
     } catch (err) {
       return { success: false, message: `Push file failed: ${err instanceof Error ? err.message : 'Unknown'}` };
     }
   }
 
-  async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
+  async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult & { entries?: any[] }> {
     try {
       const token = await this.getValidToken(credentials);
       const vaultName = path.basename(vaultPath);
       const rootDir = `/Obsync_${vaultName}`;
 
-      // Check if folder exists
-      const checkRes = await this.apiPost('files/get_metadata', token, { path: rootDir });
-      if (checkRes.status !== 200) {
-        return { success: true, message: 'Cloud folder not found. Please click "Push" first to upload your vault to Dropbox.' };
-      }
-
-      let pulled = 0;
-      const remotePaths = new Set<string>();
-
+      const entries: any[] = [];
       const syncFolder = async (dbxPath: string) => {
-        const res = await this.apiPost('files/list_folder', token, { path: dbxPath === rootDir ? rootDir : dbxPath });
+        const res = await this.apiPost('files/list_folder', token, { path: dbxPath, recursive: true });
+        if (res.status !== 200) return;
         
         for (const entry of res.data.entries) {
-          const relativePath = entry.path_display.substring(rootDir.length + 1);
-          remotePaths.add(relativePath);
-          const localPath = path.join(vaultPath, relativePath);
-
-          if (entry['.tag'] === 'folder') {
-            if (!fs.existsSync(localPath)) fs.mkdirSync(localPath, { recursive: true });
-            await syncFolder(entry.path_display);
-          } else {
-            let shouldDownload = !fs.existsSync(localPath);
-            if (!shouldDownload) {
-              const localStat = fs.statSync(localPath);
-              const remoteTime = new Date(entry.client_modified).getTime();
-              if (remoteTime > localStat.mtime.getTime() + 2000) {
-                shouldDownload = true;
-              }
-            }
-
-            if (shouldDownload) {
-              const content = await this.downloadFile(entry.path_display, token);
-              fs.writeFileSync(localPath, content);
-              pulled++;
-            }
-          }
+          const relativePath = PathUtils.toCloudRelative(entry.path_display || '', rootDir);
+          if (relativePath === null) continue;
+          
+          entries.push({
+            id: entry.id,
+            path_display: relativePath,
+            name: entry.name,
+            size: entry.size || 0,
+            lastmod: entry.client_modified || entry.server_modified,
+            '.tag': entry['.tag']
+          });
         }
 
         if (res.data.has_more) {
-          // Add continuation logic if needed, simplify for now
+           // Basic recursive true handles most, but if has_more we'd need list_folder/continue
+           // For pull scan, recursive:true in Dropbox covers the whole tree in one go usually
         }
       };
 
       await syncFolder(rootDir);
- 
-      // Safety Cleanup: Remove local files that don't exist in cloud (Deletions/Renames)
-      // BUT don't delete files that are newer than 10 seconds (allows for local creation buffer)
-      const localFiles = this.getAllLocalFiles(vaultPath);
-      const now = Date.now();
-      
-      for (const localFile of localFiles) {
-        const relativePath = path.relative(vaultPath, localFile).replace(/\\/g, '/');
-        if (relativePath.includes('.git/') || relativePath.includes('.obsidian/workspace')) continue;
-        
-        if (!remotePaths.has(relativePath)) {
-          const stats = fs.statSync(localFile);
-          if (now - stats.mtimeMs > 10000) { // Only delete if older than 10s
-            logger.info(`Pull Sync: Deleting local file not found in cloud: ${relativePath}`);
-            fs.unlinkSync(localFile);
-          }
-        }
-      }
- 
-      return { success: true, message: `Pulled ${pulled} file(s) from Dropbox`, filesChanged: pulled };
+      return { success: true, message: `Scanned ${entries.length} items from Dropbox`, entries };
     } catch (err) {
-      logger.error('Dropbox Pull Failed:', err);
-      return { success: false, message: `Pull failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+      logger.error('Dropbox Fetch Failed:', err);
+      return { success: false, message: `Cloud scan failed: ${err instanceof Error ? err.message : 'Unknown'}` };
     }
   }
 
@@ -271,34 +285,111 @@ export class DropboxCloudProvider implements ICloudProvider {
    * but we can use paths.
    */
   private async uploadFile(dbxPath: string, content: Buffer, token: string): Promise<void> {
+    const CHUNK_SIZE = 4 * 1024 * 1024; // 4MB chunks
+    const fileSize = content.length;
+
+    // Simple upload for small files (under 5MB)
+    if (fileSize <= 5 * 1024 * 1024) {
+      return new Promise((resolve, reject) => {
+        const options = {
+          hostname: 'content.dropboxapi.com',
+          path: '/2/files/upload',
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Dropbox-API-Arg': JSON.stringify({
+              path: dbxPath,
+              mode: 'overwrite',
+              mute: true
+            }),
+            'Content-Type': 'application/octet-stream',
+            'Content-Length': content.length,
+            'User-Agent': 'Obsync/1.0.0'
+          }
+        };
+
+        const req = https.request(options, (res) => {
+          if (res.statusCode === 200) resolve();
+          else {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => reject(new Error(`Dropbox Simple Upload Error (${res.statusCode}): ${data}`)));
+          }
+        });
+        req.on('error', reject);
+        req.write(content);
+        req.end();
+      });
+    }
+
+    // Large file: Chunked upload session
+    logger.info(`Starting Dropbox chunked upload for ${dbxPath} (${fileSize} bytes)`);
+    
+    // 1. Start Session
+    const startRes = await this.apiPostRaw('files/upload_session/start', 'content', token, Buffer.alloc(0), {
+      'Dropbox-API-Arg': JSON.stringify({ close: false })
+    });
+    if (startRes.status !== 200) throw new Error(`Dropbox Start Session Failed: ${JSON.stringify(startRes.data)}`);
+    
+    const sessionId = startRes.data.session_id;
+    let start = 0;
+
+    // 2. Append Chunks
+    while (start < fileSize) {
+      const end = Math.min(start + CHUNK_SIZE, fileSize);
+      const chunk = content.slice(start, end);
+      const isLast = end === fileSize;
+
+      if (!isLast) {
+        const appendRes = await this.apiPostRaw('files/upload_session/append_v2', 'content', token, chunk, {
+          'Dropbox-API-Arg': JSON.stringify({
+             cursor: { session_id: sessionId, offset: start },
+             close: false
+          })
+        });
+        if (appendRes.status !== 200) throw new Error(`Dropbox Append Failed at ${start}: ${JSON.stringify(appendRes.data)}`);
+      } else {
+        // 3. Finish Session
+        const finishRes = await this.apiPostRaw('files/upload_session/finish', 'content', token, chunk, {
+          'Dropbox-API-Arg': JSON.stringify({
+             cursor: { session_id: sessionId, offset: start },
+             commit: { path: dbxPath, mode: 'overwrite', mute: true }
+          })
+        });
+        if (finishRes.status !== 200) throw new Error(`Dropbox Finish Failed: ${JSON.stringify(finishRes.data)}`);
+      }
+      start = end;
+    }
+  }
+
+  private async apiPostRaw(endpoint: string, subdomain: 'api' | 'content', token: string, body: Buffer, extraHeaders: any): Promise<DropboxApiResponse> {
     return new Promise((resolve, reject) => {
       const options = {
-        hostname: 'content.dropboxapi.com',
-        path: '/2/files/upload',
+        hostname: `${subdomain}.dropboxapi.com`,
+        path: `/2/${endpoint}`,
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
-          'Dropbox-API-Arg': JSON.stringify({
-            path: dbxPath,
-            mode: 'overwrite',
-            mute: true
-          }),
           'Content-Type': 'application/octet-stream',
-          'Content-Length': content.length,
-          'User-Agent': 'Obsync/1.0.0'
+          'User-Agent': 'Obsync/1.0.0',
+          ...extraHeaders
         }
       };
 
       const req = https.request(options, (res) => {
-        if (res.statusCode === 200) resolve();
-        else {
-          let data = '';
-          res.on('data', chunk => data += chunk);
-          res.on('end', () => reject(new Error(`Dropbox Upload Error (${res.statusCode}): ${data}`)));
-        }
+        let data = '';
+        res.on('data', chunk => data += chunk);
+        res.on('end', () => {
+          try {
+            const json = data ? JSON.parse(data) : {};
+            resolve({ status: res.statusCode || 0, data: json });
+          } catch (e) {
+            resolve({ status: res.statusCode || 0, data });
+          }
+        });
       });
       req.on('error', reject);
-      req.write(content);
+      req.write(body);
       req.end();
     });
   }
@@ -371,6 +462,14 @@ export class DropboxCloudProvider implements ICloudProvider {
 
       logger.info('Dropbox token expired, refreshing...');
       const refreshed = await this.refreshOAuthToken(data.refresh_token);
+      // Persist the refreshed token
+      const newTokenJson = JSON.stringify({
+        access_token: refreshed.access_token,
+        refresh_token: data.refresh_token, // Dropbox doesn't rotate refresh tokens
+        expires_in: refreshed.expires_in,
+        expires_at: Date.now() + ((refreshed.expires_in ?? 14400) * 1000),
+      });
+      this.onTokenRefreshed?.(newTokenJson);
       return refreshed.access_token;
     } catch {
       return credentials.token;
@@ -413,16 +512,7 @@ export class DropboxCloudProvider implements ICloudProvider {
     });
   }
 
-  private getAllLocalFiles(dirPath: string, arrayOfFiles: string[] = []): string[] {
-    const files = fs.readdirSync(dirPath);
-    files.forEach((file: string) => {
-      const fullPath = path.join(dirPath, file);
-      if (fs.statSync(fullPath).isDirectory()) {
-        arrayOfFiles = this.getAllLocalFiles(fullPath, arrayOfFiles);
-      } else {
-        arrayOfFiles.push(fullPath);
-      }
-    });
-    return arrayOfFiles;
+  private getAllLocalFiles(vaultPath: string, dirPath: string = vaultPath, result: string[] = []): string[] {
+    return collectVaultFiles(vaultPath, dirPath, result);
   }
 }

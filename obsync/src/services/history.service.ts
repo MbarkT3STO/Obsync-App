@@ -14,6 +14,88 @@ export class HistoryService {
     private readonly cloudProvider: CloudProviderService,
   ) {}
 
+  async archiveFile(vaultPath: string, relativePath: string): Promise<void> {
+    try {
+      const sourcePath = path.join(vaultPath, relativePath);
+      if (!fs.existsSync(sourcePath) || fs.statSync(sourcePath).isDirectory()) return;
+
+      const archiveBase = path.join(vaultPath, '.obsync', 'archive');
+      const fileArchiveDir = path.join(archiveBase, relativePath);
+      if (!fs.existsSync(fileArchiveDir)) fs.mkdirSync(fileArchiveDir, { recursive: true });
+
+      const timestamp = new Date().getTime();
+      const ext = path.extname(relativePath);
+      const fileName = path.basename(relativePath, ext);
+      const archivePath = path.join(fileArchiveDir, `${fileName}.${timestamp}${ext}`);
+
+      fs.copyFileSync(sourcePath, archivePath);
+
+      // Prune: Keep only last 10 versions
+      const versions = fs.readdirSync(fileArchiveDir).sort((a, b) => {
+        const at = parseInt(a.split('.').slice(-2, -1)[0] || '0');
+        const bt = parseInt(b.split('.').slice(-2, -1)[0] || '0');
+        return at - bt;
+      });
+
+      if (versions.length > 10) {
+        for (let i = 0; i < versions.length - 10; i++) {
+          fs.unlinkSync(path.join(fileArchiveDir, versions[i]!));
+        }
+      }
+    } catch (err) {
+      logger.error(`Failed to archive ${relativePath}:`, err);
+    }
+  }
+
+  /** Lists all archived versions of a file */
+  listVersions(vaultPath: string, relativePath: string): Array<{ version: string; timestamp: number; size: number }> {
+    try {
+      const fileArchiveDir = path.join(vaultPath, '.obsync', 'archive', relativePath);
+      if (!fs.existsSync(fileArchiveDir)) return [];
+
+      const ext = path.extname(relativePath);
+      const baseName = path.basename(relativePath, ext);
+
+      return fs.readdirSync(fileArchiveDir)
+        .filter(f => f.startsWith(baseName + '.'))
+        .map(f => {
+          const fullPath = path.join(fileArchiveDir, f);
+          const stat = fs.statSync(fullPath);
+          // Extract timestamp from filename: baseName.TIMESTAMP.ext
+          const parts = f.replace(ext, '').split('.');
+          const ts = parseInt(parts[parts.length - 1] || '0', 10);
+          return { version: f, timestamp: ts, size: stat.size };
+        })
+        .sort((a, b) => b.timestamp - a.timestamp); // newest first
+    } catch {
+      return [];
+    }
+  }
+
+  /** Restores a specific archived version of a file */
+  restoreVersion(vaultPath: string, relativePath: string, version: string): boolean {
+    try {
+      const fileArchiveDir = path.join(vaultPath, '.obsync', 'archive', relativePath);
+      const archivePath = path.join(fileArchiveDir, version);
+      const targetPath = path.join(vaultPath, relativePath);
+
+      if (!fs.existsSync(archivePath)) return false;
+
+      // Archive current version before restoring
+      this.archiveFile(vaultPath, relativePath);
+
+      // Restore
+      const targetDir = path.dirname(targetPath);
+      if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+      fs.copyFileSync(archivePath, targetPath);
+      logger.info(`Restored ${relativePath} to version ${version}`);
+      return true;
+    } catch (err) {
+      logger.error(`Failed to restore version ${version} of ${relativePath}:`, err);
+      return false;
+    }
+  }
+
   async getCommits(vaultId: string, limit = 30): Promise<CommitEntry[]> {
     const vault = this.vaultService.getById(vaultId);
     if (!vault || !fs.existsSync(path.join(vault.localPath, '.git'))) return [];

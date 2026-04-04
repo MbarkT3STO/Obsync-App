@@ -26,10 +26,14 @@ contextBridge.exposeInMainWorld('obsync', {
     pull: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_PULL, vaultId),
     pullAll: () => ipcRenderer.invoke(IPC.SYNC_ALL_PULL),
     getStatus: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_STATUS, vaultId),
+    resolveConflict: (vaultId: string, filePath: string, strategy: 'local' | 'cloud' | 'both') =>
+      ipcRenderer.invoke(IPC.SYNC_RESOLVE, vaultId, filePath, strategy),
   },
   history: {
     getCommits: (vaultId: string, limit?: number) => ipcRenderer.invoke(IPC.HISTORY_GET, vaultId, limit),
     getFileDiff: (vaultId: string, filePath: string) => ipcRenderer.invoke(IPC.HISTORY_GET_DIFF, vaultId, filePath),
+    listVersions: (vaultId: string, filePath: string) => ipcRenderer.invoke(IPC.HISTORY_LIST_VERSIONS, vaultId, filePath),
+    restoreVersion: (vaultId: string, filePath: string, version: string) => ipcRenderer.invoke(IPC.HISTORY_RESTORE_VERSION, vaultId, filePath, version),
   },
   autoSync: {
     set: (vaultId: string, config: AutoSyncConfig) => ipcRenderer.invoke(IPC.AUTOSYNC_SET, vaultId, config),

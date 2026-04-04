@@ -13,6 +13,7 @@ import { HistoryService } from '../services/history.service';
 import { AutoSyncService } from '../services/autosync.service';
 import { OAuthService } from '../services/oauth.service';
 import { ManifestService } from '../services/manifest.service';
+import { GitSyncService } from '../services/git-sync.service';
 import { TrayManager } from './tray';
 import { registerIpcHandlers } from './ipc-handlers';
 import { createLogger } from '../utils/logger.util';
@@ -24,10 +25,12 @@ const storageService  = new StorageService();
 const vaultService    = new VaultService(storageService);
 const cloudProvider   = new CloudProviderService(storageService);
 const manifestService = new ManifestService();
-const syncService      = new SyncService(vaultService, cloudProvider, manifestService);
-const historyService   = new HistoryService(vaultService, cloudProvider);
-const autoSyncService  = new AutoSyncService(storageService, vaultService, syncService);
-const oauthService     = new OAuthService();
+const historyService  = new HistoryService(vaultService, cloudProvider);
+const gitSyncService  = new GitSyncService(vaultService, cloudProvider, historyService, storageService);
+// Keep legacy services for backward compat with IPC handlers that still reference them
+const syncService     = new SyncService(vaultService, cloudProvider, manifestService, historyService);
+const autoSyncService = new AutoSyncService(storageService, vaultService, syncService);
+const oauthService    = new OAuthService();
 
 let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
@@ -86,8 +89,8 @@ function createWindow(): BrowserWindow {
   });
 
   win.webContents.once('did-finish-load', async () => {
-    // Restore auto-sync watchers
-    autoSyncService.restoreAll(win);
+    // Restore auto-sync watchers using new git-based service
+    gitSyncService.restoreAll(win);
 
     // Sync on startup
     const cfg = storageService.load();
@@ -109,7 +112,7 @@ async function runStartupPull(win: BrowserWindow): Promise<void> {
 
   for (const vault of vaults) {
     if (!config.cloudConfigs[vault.id]) continue;
-    const result = await syncService.pull(vault.id, win);
+    const result = await gitSyncService.pull(vault.id, win);
     results.push({ name: vault.name, success: result.success, message: result.message });
   }
 
@@ -129,12 +132,13 @@ app.whenReady().then(() => {
     storageService, historyService, autoSyncService,
     oauthService,
     () => mainWindow,
+    gitSyncService,
   );
 
   const win = createWindow();
 
   // Create tray
-  trayManager = new TrayManager(vaultService, syncService, storageService, () => mainWindow);
+  trayManager = new TrayManager(vaultService, gitSyncService, storageService, () => mainWindow);
   trayManager.create();
 
   // If startMinimized, show tray notification
@@ -156,7 +160,7 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  autoSyncService.stopAll();
+  gitSyncService.stopAll();
   trayManager?.destroy();
   if (process.platform !== 'darwin') app.quit();
 });

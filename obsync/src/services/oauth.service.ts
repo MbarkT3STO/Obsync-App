@@ -21,7 +21,8 @@ export class OAuthService {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
       authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
       tokenUrl: 'https://oauth2.googleapis.com/token',
-      scopes: ['https://www.googleapis.com/auth/drive.file']
+      scopes: ['https://www.googleapis.com/auth/drive.file'],
+      extraParams: { access_type: 'offline', prompt: 'consent' }
     },
     'dropbox': {
       clientId: process.env.DROPBOX_CLIENT_ID || '',
@@ -56,41 +57,42 @@ export class OAuthService {
         const code = url.searchParams.get('code');
 
         if (code) {
-          const redirectUri = `http://127.0.0.1:51730`;
+          const PORT = 51730;
+          const redirectUri = `http://localhost:${PORT}`;
           
           try {
             const tokenData = await this.exchangeCodeForToken(config, code, redirectUri);
-            res.end('<h1>Authentication Successful!</h1><p>Return to Obsync.</p>');
+            res.end('<h1>Authentication Successful!</h1><p>You can close this window and return to Obsync.</p>');
             server.close();
             resolve(JSON.stringify(tokenData));
           } catch (err) {
-            res.end('<h1>Token Exchange Failed</h1>');
+            logger.error(`Token Exchange failed for ${provider}:`, err);
+            res.end(`<h1>Token Exchange Failed</h1><p>${err instanceof Error ? err.message : 'Unknown error'}</p>`);
             server.close();
             reject(err);
           }
         } else {
-          res.end('<h1>Authentication Failed</h1>');
+          res.end('<h1>Authentication Failed</h1><p>No code received.</p>');
           server.close();
           reject(new Error('No code received'));
         }
       });
 
-      // Use a fixed port for consistency (easier to whitelist in cloud consoles)
       const PORT = 51730;
-      server.listen(PORT, '127.0.0.1', () => {
-        const redirectUri = `http://127.0.0.1:${PORT}`;
+      server.listen(PORT, 'localhost', () => {
+        const redirectUri = `http://localhost:${PORT}`;
         
         const params = new URLSearchParams({
           client_id: config.clientId,
           redirect_uri: redirectUri,
           response_type: 'code',
           scope: config.scopes.join(' '),
-          access_type: 'offline',
-          prompt: 'consent',
           ...(config.extraParams || {})
         });
 
-        shell.openExternal(`${config.authUrl}?${params.toString()}`);
+        const fullAuthUrl = `${config.authUrl}?${params.toString()}`;
+        logger.info(`Opening OAuth URL for ${provider}`);
+        shell.openExternal(fullAuthUrl);
       });
     });
   }
@@ -98,7 +100,7 @@ export class OAuthService {
   private async exchangeCodeForToken(config: OAuthConfig, code: string, redirectUri: string): Promise<any> {
     return new Promise((resolve, reject) => {
       const https = require('https') as typeof import('https');
-      const params = new URLSearchParams({
+      const bodyParams = new URLSearchParams({
         client_id: config.clientId,
         client_secret: config.clientSecret,
         code,
@@ -106,11 +108,17 @@ export class OAuthService {
         grant_type: 'authorization_code'
       });
 
+      // Microsoft sometimes requires scope in the body too
+      if (config.tokenUrl.includes('microsoft')) {
+        bodyParams.append('scope', config.scopes.join(' '));
+      }
+
+      const body = bodyParams.toString();
       const options = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
-          'Content-Length': params.toString().length
+          'Content-Length': Buffer.byteLength(body)
         }
       };
 
@@ -128,15 +136,17 @@ export class OAuthService {
                 expires_at: Date.now() + (json.expires_in * 1000)
               });
             } else {
-              reject(new Error(json.error_description || 'No access token received'));
+              logger.error('Token endpoint error response:', json);
+              reject(new Error(json.error_explanation || json.error_description || json.error || 'No access token received'));
             }
           } catch (e) {
+            logger.error('Failed to parse token response:', data);
             reject(new Error('Failed to parse token response'));
           }
         });
       });
       req.on('error', reject);
-      req.write(params.toString());
+      req.write(body);
       req.end();
     });
   }

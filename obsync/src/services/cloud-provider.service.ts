@@ -3,7 +3,7 @@ import { encrypt, decrypt } from '../utils/crypto.util';
 import type { CloudConfig, CloudCredentials, SyncResult } from '../models/cloud-sync.model';
 import type { StorageService } from './storage.service';
 import { GitCloudProvider } from './providers/git.provider';
-import { WebDAVCloudProvider } from './providers/webdav.provider';
+import { WebDavCloudProvider } from './providers/webdav.provider';
 import { GoogleDriveCloudProvider } from './providers/googledrive.provider';
 import { DropboxCloudProvider } from './providers/dropbox.provider';
 import { OneDriveCloudProvider } from './providers/onedrive.provider';
@@ -21,7 +21,7 @@ export class CloudProviderService {
     this.providers['gitlab'] = git;
     this.providers['bitbucket'] = git;
     this.providers['git-custom'] = git;
-    this.providers['webdav'] = new WebDAVCloudProvider();
+    this.providers['webdav'] = new WebDavCloudProvider();
     this.providers['googledrive'] = new GoogleDriveCloudProvider();
     this.providers['dropbox'] = new DropboxCloudProvider();
     this.providers['onedrive'] = new OneDriveCloudProvider();
@@ -76,6 +76,7 @@ export class CloudProviderService {
     if (!creds) return { success: false, message: 'Provider not configured' };
     const provider = this.providers[creds.provider];
     if (!provider) return { success: false, message: 'No sync engine for this provider' };
+    this.wireTokenRefresh(provider, vaultId);
     return provider.push(vaultPath, creds);
   }
 
@@ -84,6 +85,7 @@ export class CloudProviderService {
     if (!creds) return { success: false, message: 'Provider not configured' };
     const provider = this.providers[creds.provider];
     if (!provider) return { success: false, message: 'No sync engine for this provider' };
+    this.wireTokenRefresh(provider, vaultId);
     return provider.pull(vaultPath, creds);
   }
 
@@ -97,5 +99,43 @@ export class CloudProviderService {
     const provider = this.providers[credentials.provider];
     if (!provider || !provider.clone) return { success: false, message: 'Provider does not support import' };
     return provider.clone(vaultPath, credentials);
+  }
+
+  async pullFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    const provider = this.providers[credentials.provider];
+    if (!provider || !provider.pullFile) return { success: false, message: 'Provider does not support pullFile' };
+    return provider.pullFile(vaultPath, relativePath, credentials);
+  }
+
+  async move(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
+    const provider = this.providers[credentials.provider];
+    if (!provider || !provider.move) return { success: false, message: 'Provider does not support atomic move' };
+    return provider.move(vaultPath, oldRelativePath, newRelativePath, credentials);
+  }
+
+  /** Wire up token refresh persistence for a provider instance */
+  private wireTokenRefresh(provider: ICloudProvider, vaultId: string): void {
+    provider.onTokenRefreshed = (newTokenJson: string) => {
+      this.persistRefreshedToken(vaultId, newTokenJson);
+    };
+  }
+
+  /**
+   * Persists a refreshed OAuth token back to encrypted storage so the next
+   * sync doesn't need to re-exchange the refresh token.
+   */
+  persistRefreshedToken(vaultId: string, newTokenJson: string): void {
+    try {
+      const config = this.getConfig(vaultId);
+      if (!config) return;
+      const updated = { ...config, encryptedToken: encrypt(newTokenJson) };
+      const appConfig = this.storage.load();
+      this.storage.update({
+        cloudConfigs: { ...appConfig.cloudConfigs, [vaultId]: updated },
+      });
+      logger.info(`Persisted refreshed token for vault ${vaultId}`);
+    } catch (err) {
+      logger.error('Failed to persist refreshed token', err);
+    }
   }
 }

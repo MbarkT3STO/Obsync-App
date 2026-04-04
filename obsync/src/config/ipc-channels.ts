@@ -19,6 +19,7 @@ export const IPC = {
   SYNC_STATUS: 'sync:status',
   SYNC_INIT: 'sync:init',
   SYNC_ALL_PULL: 'sync:all-pull',
+  SYNC_RESOLVE: 'sync:resolve',
 
   // History
   HISTORY_GET: 'history:get',
@@ -39,10 +40,15 @@ export const IPC = {
   // Tray
   TRAY_SHOW_WINDOW: 'tray:show-window',
 
+  // Version history
+  HISTORY_LIST_VERSIONS: 'history:list-versions',
+  HISTORY_RESTORE_VERSION: 'history:restore-version',
+
   // Events (main → renderer)
   EVENT_SYNC_PROGRESS: 'event:sync-progress',
   EVENT_SYNC_COMPLETE: 'event:sync-complete',
   EVENT_CONFLICT_DETECTED: 'event:conflict-detected',
   EVENT_AUTOSYNC_TRIGGERED: 'event:autosync-triggered',
   EVENT_STARTUP_PULL_DONE: 'event:startup-pull-done',
+  EVENT_TOKEN_REFRESHED: 'event:token-refreshed',
 } as const;

@@ -2,7 +2,7 @@ import { Tray, Menu, BrowserWindow, app, nativeImage } from 'electron';
 import path from 'path';
 import { createLogger } from '../utils/logger.util';
 import type { VaultService } from '../services/vault.service';
-import type { SyncService } from '../services/sync.service';
+import type { GitSyncService } from '../services/git-sync.service';
 import type { StorageService } from '../services/storage.service';
 
 const logger = createLogger('Tray');
@@ -12,7 +12,7 @@ export class TrayManager {
 
   constructor(
     private readonly vaultService: VaultService,
-    private readonly syncService: SyncService,
+    private readonly gitSyncService: GitSyncService,
     private readonly storageService: StorageService,
     private readonly getWindow: () => BrowserWindow | null,
   ) {}
@@ -58,7 +58,7 @@ export class TrayManager {
         for (const vault of vaults) {
           const cloudConfig = config.cloudConfigs[vault.id];
           if (cloudConfig) {
-            await this.syncService.push(vault.id, win);
+            await this.gitSyncService.push(vault.id, win);
           }
         }
       },

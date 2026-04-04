@@ -40,4 +40,7 @@ export interface ICloudProvider {
   init?(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
   clone?(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
   delete?(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult>;
+  move?(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult>;
+  /** Called by providers when they refresh an OAuth token so it can be persisted */
+  onTokenRefreshed?: (newTokenJson: string) => void;
 }

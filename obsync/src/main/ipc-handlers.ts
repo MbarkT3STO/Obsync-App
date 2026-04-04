@@ -10,6 +10,7 @@ import type { StorageService } from '../services/storage.service';
 import type { HistoryService } from '../services/history.service';
 import type { AutoSyncService } from '../services/autosync.service';
 import type { OAuthService } from '../services/oauth.service';
+import type { GitSyncService } from '../services/git-sync.service';
 import type { SyncProviderType } from '../models/cloud-sync.model';
 import { applyLoginItemSetting } from './main';
 import { createLogger } from '../utils/logger.util';
@@ -29,6 +30,7 @@ export function registerIpcHandlers(
   autoSyncService: AutoSyncService,
   oauthService: OAuthService,
   getWindow: () => BrowserWindow | null,
+  gitSyncService: GitSyncService,
 ): void {
 
   // ── Vault ──────────────────────────────────────────────────────────────────
@@ -52,7 +54,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.VAULT_CLONE, async (_event, targetPath: string, credentials: CloudCredentials) => {
     try {
-      const result = await syncService.clone(targetPath, credentials);
+      const result = await gitSyncService.clone(targetPath, credentials);
       return reply(result.success, result.data, result.success ? undefined : result.message);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to clone';
@@ -63,6 +65,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.VAULT_REMOVE, async (_event, vaultId: string) => {
     try {
+      gitSyncService.stopWatcher(vaultId);
       autoSyncService.stopWatcher(vaultId);
       vaultService.remove(vaultId);
       return reply(true);
@@ -112,26 +115,35 @@ export function registerIpcHandlers(
   // ── Sync ───────────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.SYNC_INIT, async (_event, vaultId: string) => {
-    const result = await syncService.initRepo(vaultId);
+    const result = await gitSyncService.initRepo(vaultId);
     return reply(result.success, result, result.success ? undefined : result.message);
   });
 
   ipcMain.handle(IPC.SYNC_PUSH, async (event, vaultId: string) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
     if (!win) return reply(false, undefined, 'No window');
-    const result = await syncService.push(vaultId, win);
+    const result = await gitSyncService.push(vaultId, win);
     return reply(result.success, result, result.success ? undefined : result.message);
   });
 
   ipcMain.handle(IPC.SYNC_PULL, async (event, vaultId: string) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
     if (!win) return reply(false, undefined, 'No window');
-    const result = await syncService.pull(vaultId, win);
+    const result = await gitSyncService.pull(vaultId, win);
     return reply(result.success, result, result.success ? undefined : result.message);
   });
 
   ipcMain.handle(IPC.SYNC_STATUS, async (_event, vaultId: string) => {
-    return reply(true, syncService.getStatus(vaultId));
+    return reply(true, gitSyncService.getStatus(vaultId));
+  });
+
+  ipcMain.handle(IPC.SYNC_RESOLVE, async (_event, vaultId: string, filePath: string, strategy: 'local' | 'cloud' | 'both') => {
+    try {
+      const res = await gitSyncService.resolveConflict(vaultId, filePath, strategy);
+      return reply(res.success, res, res.success ? undefined : res.message);
+    } catch (err) {
+      return reply(false, undefined, err instanceof Error ? err.message : 'Resolution failed');
+    }
   });
 
   ipcMain.handle(IPC.SYNC_ALL_PULL, async (event) => {
@@ -142,7 +154,7 @@ export function registerIpcHandlers(
     const results = [];
     for (const vault of vaults) {
       if (!config.cloudConfigs[vault.id]) continue;
-      const r = await syncService.pull(vault.id, win);
+      const r = await gitSyncService.pull(vault.id, win);
       results.push({ vaultId: vault.id, name: vault.name, ...r });
     }
     return reply(true, results);
@@ -161,21 +173,35 @@ export function registerIpcHandlers(
     return reply(true, diff);
   });
 
+  ipcMain.handle(IPC.HISTORY_LIST_VERSIONS, async (_event, vaultId: string, filePath: string) => {
+    const vault = vaultService.getById(vaultId);
+    if (!vault) return reply(false, undefined, 'Vault not found');
+    const versions = historyService.listVersions(vault.localPath, filePath);
+    return reply(true, versions);
+  });
+
+  ipcMain.handle(IPC.HISTORY_RESTORE_VERSION, async (_event, vaultId: string, filePath: string, version: string) => {
+    const vault = vaultService.getById(vaultId);
+    if (!vault) return reply(false, undefined, 'Vault not found');
+    const ok = historyService.restoreVersion(vault.localPath, filePath, version);
+    return ok ? reply(true) : reply(false, undefined, 'Failed to restore version');
+  });
+
   // ── Auto-sync ──────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.AUTOSYNC_SET, async (event, vaultId: string, config: AutoSyncConfig) => {
     const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
-    autoSyncService.setConfig(vaultId, config);
+    gitSyncService.setAutoSyncConfig(vaultId, config);
     if (config.enabled && win) {
-      autoSyncService.startWatcher(vaultId, win);
+      gitSyncService.startWatcher(vaultId, win);
     } else {
-      autoSyncService.stopWatcher(vaultId);
+      gitSyncService.stopWatcher(vaultId);
     }
     return reply(true);
   });
 
   ipcMain.handle(IPC.AUTOSYNC_GET, async (_event, vaultId: string) => {
-    const config = autoSyncService.getConfig(vaultId);
+    const config = gitSyncService.getAutoSyncConfig(vaultId);
     return reply(true, config ?? { enabled: false, debounceSeconds: 30 });
   });
 

@@ -25,7 +25,7 @@ interface ObsyncAPI {
   };
   cloud: {
     saveConfig(vaultId: string, creds: CloudCredentials): Promise<IpcResponse<void>>;
-    getConfig(vaultId: string): Promise<IpcResponse<{ provider: SyncProviderType; meta: Record<string, any> }>>;
+    getConfig(vaultId: string): Promise<IpcResponse<{ provider: SyncProviderType; meta: Record<string, any>; token?: string }>>;
     validate(creds: CloudCredentials): Promise<IpcResponse<boolean>>;
     signIn(provider: SyncProviderType): Promise<IpcResponse<string>>;
   };
@@ -35,10 +35,13 @@ interface ObsyncAPI {
     pull(vaultId: string): Promise<IpcResponse<{ message: string }>>;
     pullAll(): Promise<IpcResponse<Array<{ vaultId: string; name: string; success: boolean; message: string }>>>;
     getStatus(vaultId: string): Promise<IpcResponse<VaultSyncStatus>>;
+    resolveConflict(vaultId: string, filePath: string, strategy: 'local' | 'cloud' | 'both'): Promise<IpcResponse<void>>;
   };
   history: {
     getCommits(vaultId: string, limit?: number): Promise<IpcResponse<CommitEntry[]>>;
     getFileDiff(vaultId: string, filePath: string): Promise<IpcResponse<FileDiff>>;
+    listVersions(vaultId: string, filePath: string): Promise<IpcResponse<Array<{ version: string; timestamp: number; size: number }>>>;
+    restoreVersion(vaultId: string, filePath: string, version: string): Promise<IpcResponse<void>>;
   };
   autoSync: {
     set(vaultId: string, config: AutoSyncConfig): Promise<IpcResponse<void>>;
@@ -73,6 +76,7 @@ let vaults: Vault[] = [];
 let selectedVaultId: string | null = null;
 let currentProvider: SyncProviderType = 'github';
 let currentImportProvider: SyncProviderType = 'github';
+let currentConflicts: { vaultId: string, files: string[] } | null = null;
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -106,7 +110,45 @@ const btnDashboardNav = $<HTMLButtonElement>('btn-dashboard-nav');
 const btnGoDashboard  = $('btn-go-dashboard');
 const conflictModal   = $('conflict-modal');
 const conflictList    = $<HTMLUListElement>('conflict-list');
-const btnConflictOk   = $<HTMLButtonElement>('btn-conflict-ok');
+const btnConflictLocal = $<HTMLButtonElement>('btn-conflict-local');
+const btnConflictCloud = $<HTMLButtonElement>('btn-conflict-cloud');
+const btnConflictBoth  = $<HTMLButtonElement>('btn-conflict-both');
+
+// Resolution Logic
+async function handleConflictResolution(strategy: 'local' | 'cloud' | 'both'): Promise<void> {
+  if (!currentConflicts) return;
+  const { vaultId, files } = currentConflicts;
+  
+  showLoading(`Resolving ${files.length} conflict(s)...`);
+  for (const filePath of files) {
+    await window.obsync.sync.resolveConflict(vaultId, filePath, strategy);
+  }
+  
+  currentConflicts = null;
+  conflictModal.classList.add('hidden');
+  hideLoading();
+  
+  // Re-pull to verify sync
+  await window.obsync.sync.pull(vaultId);
+  showToast('Conflicts resolved and vault pulled', 'success');
+}
+
+btnConflictLocal.addEventListener('click', () => handleConflictResolution('local'));
+btnConflictCloud.addEventListener('click', () => handleConflictResolution('cloud'));
+btnConflictBoth.addEventListener('click', () => handleConflictResolution('both'));
+
+function showConflictModal(vaultId: string, conflicts: Array<{ filePath: string }>): void {
+  currentConflicts = { vaultId, files: conflicts.map(c => c.filePath) };
+  conflictList.innerHTML = '';
+  for (const c of conflicts) {
+    const li = document.createElement('li');
+    li.style.padding = '8px 0';
+    li.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+    li.textContent = c.filePath;
+    conflictList.appendChild(li);
+  }
+  conflictModal.classList.remove('hidden');
+}
 const themeDarkBtn    = $<HTMLButtonElement>('theme-dark');
 const themeLightBtn   = $<HTMLButtonElement>('theme-light');
 
@@ -130,6 +172,15 @@ const historyModal    = $('history-modal');
 const historyList     = $('history-list');
 const btnHistoryClose = $<HTMLButtonElement>('btn-history-close');
 const btnShowHistory  = $<HTMLButtonElement>('btn-show-history');
+
+// Versions modal
+const versionsModal     = $('versions-modal');
+const versionsList      = $('versions-list');
+const versionsFilePath  = $('versions-file-path');
+const versionsFileInput = $<HTMLInputElement>('versions-file-input');
+const btnVersionsClose  = $<HTMLButtonElement>('btn-versions-close');
+const btnShowVersions   = $<HTMLButtonElement>('btn-show-versions');
+const btnVersionsLoad   = $<HTMLButtonElement>('btn-versions-load');
 
 // Diff modal
 const diffModal       = $('diff-modal');
@@ -292,13 +343,14 @@ function getProviderMeta(provider: SyncProviderType) {
       return {
         urlLabel: 'WebDAV Server URL',
         urlPlaceholder: 'https://nextcloud.com/remote.php/dav/files/user/',
-        branchLabel: '',
-        branchPlaceholder: '',
-        hideBranch: true,
+        branchLabel: 'Username',
+        branchPlaceholder: 'Your username',
+        hideBranch: false,
         tokenLabel: 'Password / App Token',
         tokenPlaceholder: 'Your WebDAV password',
         useOAuth: false,
-        isGit: false
+        isGit: false,
+        hideUrl: false
       };
     case 's3':
       return {
@@ -446,9 +498,22 @@ async function selectVault(vaultId: string): Promise<void> {
   // Load Cloud config
   const configRes = await window.obsync.cloud.getConfig(vaultId);
   if (configRes.success && configRes.data) {
-    providerSelect.setValue(configRes.data.provider);
-    inputRepoUrl.value = configRes.data.meta?.repoUrl || '';
-    inputBranch.value = configRes.data.meta?.branch || 'main';
+    const { provider, meta, token } = configRes.data;
+    providerSelect.setValue(provider);
+    
+    if (provider === 'webdav' && token) {
+      try {
+        const data = JSON.parse(token);
+        inputRepoUrl.value = data.url || '';
+        inputBranch.value = data.username || '';
+      } catch {
+        inputRepoUrl.value = meta?.repoUrl || '';
+        inputBranch.value = meta?.branch || '';
+      }
+    } else {
+      inputRepoUrl.value = meta?.repoUrl || '';
+      inputBranch.value = meta?.branch || 'main';
+    }
   } else {
     providerSelect.setValue('github');
     inputRepoUrl.value = '';
@@ -537,7 +602,6 @@ function registerEventListeners(): void {
   btnPull.addEventListener('click', handlePull);
   btnValidate.addEventListener('click', handleValidate);
   cloudForm.addEventListener('submit', handleSaveConfig);
-  btnConflictOk.addEventListener('click', () => conflictModal.classList.add('hidden'));
   themeDarkBtn.addEventListener('click', () => setTheme('dark'));
   themeLightBtn.addEventListener('click', () => setTheme('light'));
 
@@ -550,6 +614,16 @@ function registerEventListeners(): void {
 
   historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.add('hidden'); });
   diffModal.addEventListener('click', (e) => { if (e.target === diffModal) diffModal.classList.add('hidden'); });
+
+  btnShowVersions.addEventListener('click', () => {
+    versionsModal.classList.remove('hidden');
+    versionsFileInput.value = '';
+    versionsList.innerHTML = '<div class="history-empty">Enter a file path above to view its versions.</div>';
+    versionsFilePath.textContent = '';
+  });
+  btnVersionsClose.addEventListener('click', () => versionsModal.classList.add('hidden'));
+  versionsModal.addEventListener('click', (e) => { if (e.target === versionsModal) versionsModal.classList.add('hidden'); });
+  btnVersionsLoad.addEventListener('click', () => handleLoadVersions());
 
   btnSyncAll.addEventListener('click', handleSyncAll);
   btnDashboardAdd.addEventListener('click', handleAddVault);
@@ -592,19 +666,35 @@ function registerEventListeners(): void {
     const localPath = inputImportPath.value.trim();
 
     const meta = getProviderMeta(provider);
-    if (!token || !localPath || (meta.isGit && !repoUrl)) {
-      showToast(meta.isGit ? 'Please fill all fields' : 'Token and Local Path are required', 'error');
+
+    // Validation
+    if (!localPath) {
+      showToast('Please choose a local folder', 'error');
+      return;
+    }
+    if (!token) {
+      showToast('Access token / password is required', 'error');
+      return;
+    }
+    if (meta.isGit && !repoUrl) {
+      showToast('Repository URL is required for Git providers', 'error');
       return;
     }
 
-    btnImportStart.disabled = true;
-    (btnImportStart.querySelector('span') || btnImportStart).textContent = 'Cloning...';
-    
+    // Build final token — WebDAV needs JSON-encoded credentials
+    let finalToken = token;
+    if (provider === 'webdav') {
+      finalToken = JSON.stringify({ url: repoUrl, username: branch, password: token });
+    }
+
+    setButtonLoading(btnImportStart, true);
+    showLoading('Importing vault from cloud...');
+
     try {
-      const res = await window.obsync.vault.clone(localPath, { 
-        provider, 
-        token, 
-        meta: { repoUrl, branch } 
+      const res = await window.obsync.vault.clone(localPath, {
+        provider,
+        token: finalToken,
+        meta: { repoUrl, branch },
       });
       if (res.success && res.data) {
         showToast('Vault imported successfully', 'success');
@@ -614,17 +704,11 @@ function registerEventListeners(): void {
       } else {
         showToast(res.error || 'Failed to import vault', 'error');
       }
-    } catch (err) {
+    } catch (e) {
       showToast('An unexpected error occurred during import', 'error');
     } finally {
-      btnImportStart.disabled = false;
-      btnImportStart.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="1 4 1 10 7 10"/><polyline points="23 20 23 14 17 14"/>
-          <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
-        </svg>
-        Start Import
-      `;
+      setButtonLoading(btnImportStart, false);
+      hideLoading();
     }
   });
 
@@ -691,9 +775,9 @@ function registerIpcListeners(): void {
     }
   });
 
-  window.obsync.on.conflictDetected((data) => {
-    if (data.vaultId === selectedVaultId) {
-      showConflictModal(data.conflicts);
+  window.obsync.on.conflictDetected(({ vaultId, conflicts }) => {
+    if (vaultId === selectedVaultId) {
+      showConflictModal(vaultId, conflicts);
     }
   });
 
@@ -796,10 +880,14 @@ async function handleValidate(): Promise<void> {
     }
   }
 
-  setButtonLoading(btnValidate, true);
+  let finalToken = token;
+  if (provider === 'webdav') {
+    finalToken = JSON.stringify({ url: repoUrl, username: branch, password: token });
+  }
+
   const res = await window.obsync.cloud.validate({ 
     provider, 
-    token, 
+    token: finalToken, 
     meta: { repoUrl, branch } 
   });
   setButtonLoading(btnValidate, false);
@@ -834,9 +922,14 @@ async function handleSaveConfig(e: Event): Promise<void> {
 
   setButtonLoading(btnSaveConfig, true);
 
+  let finalToken = token;
+  if (provider === 'webdav') {
+    finalToken = JSON.stringify({ url: repoUrl, username: branch, password: token });
+  }
+
   const saveRes = await window.obsync.cloud.saveConfig(selectedVaultId, { 
     provider, 
-    token, 
+    token: finalToken, 
     meta: { repoUrl, branch } 
   });
   if (!saveRes.success) {
@@ -1143,16 +1236,6 @@ function applyTheme(theme: 'dark' | 'light'): void {
   themeLightBtn.classList.toggle('active', theme === 'light');
 }
 
-function showConflictModal(conflicts: Array<{ filePath: string }>): void {
-  conflictList.innerHTML = '';
-  for (const c of conflicts) {
-    const li = document.createElement('li');
-    li.textContent = c.filePath;
-    conflictList.appendChild(li);
-  }
-  conflictModal.classList.remove('hidden');
-}
-
 const TOAST_ICONS: Record<string, string> = {
   success: `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`,
   error:   `<svg class="toast-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
@@ -1189,6 +1272,57 @@ function escapeHtml(str: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+async function handleLoadVersions(): Promise<void> {
+  if (!selectedVaultId) return;
+  const filePath = versionsFileInput.value.trim();
+  if (!filePath) {
+    showToast('Enter a file path', 'warning');
+    return;
+  }
+
+  versionsFilePath.textContent = filePath;
+  versionsList.innerHTML = '<div class="history-loading">Loading versions...</div>';
+
+  const res = await window.obsync.history.listVersions(selectedVaultId, filePath);
+  if (!res.success || !res.data || res.data.length === 0) {
+    versionsList.innerHTML = '<div class="history-empty">No archived versions found for this file.</div>';
+    return;
+  }
+
+  versionsList.innerHTML = '';
+  for (const v of res.data) {
+    const item = document.createElement('div');
+    item.className = 'commit-item';
+    const date = new Date(v.timestamp).toLocaleString();
+    const sizeKb = (v.size / 1024).toFixed(1);
+    item.innerHTML = `
+      <span class="commit-hash">${escapeHtml(date)}</span>
+      <div class="commit-body">
+        <div class="commit-message">${escapeHtml(v.version)}</div>
+        <div class="commit-meta"><span>${sizeKb} KB</span></div>
+      </div>
+      <button class="btn-secondary" style="font-size:12px;padding:6px 12px" data-version="${escapeHtml(v.version)}">Restore</button>
+    `;
+    const restoreBtn = item.querySelector('button')!;
+    restoreBtn.addEventListener('click', async () => {
+      const confirmed = confirm(`Restore "${filePath}" to version from ${date}? Current version will be archived.`);
+      if (!confirmed) return;
+      restoreBtn.disabled = true;
+      restoreBtn.textContent = 'Restoring...';
+      const r = await window.obsync.history.restoreVersion(selectedVaultId!, filePath, v.version);
+      if (r.success) {
+        showToast(`Restored ${filePath} to ${date}`, 'success');
+        versionsModal.classList.add('hidden');
+      } else {
+        showToast(r.error ?? 'Restore failed', 'error');
+        restoreBtn.disabled = false;
+        restoreBtn.textContent = 'Restore';
+      }
+    });
+    versionsList.appendChild(item);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', () => { init(); });

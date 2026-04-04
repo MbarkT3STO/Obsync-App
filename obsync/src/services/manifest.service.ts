@@ -7,7 +7,7 @@ const logger = createLogger('ManifestService');
 export interface ManifestEntry {
   path: string;
   hash?: string;
-  remoteId?: string;
+  remoteId?: string; // Critical for move detection
   version?: string;
   mtime: number;
   size: number;
