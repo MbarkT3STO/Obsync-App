@@ -13,20 +13,25 @@ const logger = createLogger('CloudProviderService');
 
 /** Gateway service that routes sync requests to the appropriate provider (Git, WebDAV, etc.) */
 export class CloudProviderService {
-  private providers: Record<string, ICloudProvider> = {};
+  private readonly providers: Map<string, ICloudProvider>;
 
   constructor(private readonly storage: StorageService) {
     const git = new GitCloudProvider();
-    this.providers['github'] = git;
-    this.providers['gitlab'] = git;
-    this.providers['bitbucket'] = git;
-    this.providers['git-custom'] = git;
-    this.providers['webdav'] = new WebDavCloudProvider();
-    this.providers['googledrive'] = new GoogleDriveCloudProvider();
-    this.providers['dropbox'] = new DropboxCloudProvider();
-    this.providers['onedrive'] = new OneDriveCloudProvider();
-    this.providers['s3'] = this.providers['googledrive']; // S3 placeholder
-    // Add more providers here (S3, Dropbox, etc.)
+    this.providers = new Map<string, ICloudProvider>([
+      ['github',     git],
+      ['gitlab',     git],
+      ['bitbucket',  git],
+      ['git-custom', git],
+      ['webdav',     new WebDavCloudProvider()],
+      ['googledrive', new GoogleDriveCloudProvider()],
+      ['dropbox',    new DropboxCloudProvider()],
+      ['onedrive',   new OneDriveCloudProvider()],
+    ]);
+  }
+
+  /** Returns the provider instance for the given type, or null if unsupported. */
+  getProvider(providerType: string): ICloudProvider | null {
+    return this.providers.get(providerType) ?? null;
   }
 
   saveConfig(vaultId: string, credentials: CloudCredentials): void {
@@ -52,7 +57,11 @@ export class CloudProviderService {
     try {
       return decrypt(config.encryptedToken);
     } catch {
-      logger.error(`Failed to decrypt token for vault ${vaultId}`);
+      // This is expected when opening the app on a new machine — the token was
+      // encrypted by a different OS session (safeStorage is machine-local).
+      // The caller will return null → IPC returns 'Provider not configured' →
+      // the UI shows the settings form so the user can re-authenticate.
+      logger.warn(`Cannot decrypt token for vault ${vaultId} — re-authentication required on this machine`);
       return null;
     }
   }
@@ -66,7 +75,7 @@ export class CloudProviderService {
   }
 
   async validate(credentials: CloudCredentials): Promise<SyncResult> {
-    const provider = this.providers[credentials.provider];
+    const provider = this.providers.get(credentials.provider);
     if (!provider) return { success: false, message: `Unknown provider: ${credentials.provider}` };
     return provider.validate(credentials);
   }
@@ -74,7 +83,7 @@ export class CloudProviderService {
   async push(vaultPath: string, vaultId: string): Promise<SyncResult> {
     const creds = this.getCredentials(vaultId);
     if (!creds) return { success: false, message: 'Provider not configured' };
-    const provider = this.providers[creds.provider];
+    const provider = this.providers.get(creds.provider);
     if (!provider) return { success: false, message: 'No sync engine for this provider' };
     this.wireTokenRefresh(provider, vaultId);
     return provider.push(vaultPath, creds);
@@ -83,34 +92,45 @@ export class CloudProviderService {
   async pull(vaultPath: string, vaultId: string): Promise<SyncResult> {
     const creds = this.getCredentials(vaultId);
     if (!creds) return { success: false, message: 'Provider not configured' };
-    const provider = this.providers[creds.provider];
+    const provider = this.providers.get(creds.provider);
     if (!provider) return { success: false, message: 'No sync engine for this provider' };
     this.wireTokenRefresh(provider, vaultId);
     return provider.pull(vaultPath, creds);
   }
 
   async initRepo(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
-    const provider = this.providers[credentials.provider];
+    const provider = this.providers.get(credentials.provider);
     if (!provider || !provider.init) return { success: false, message: 'Provider does not support initialization' };
     return provider.init(vaultPath, credentials);
   }
 
   async clone(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
-    const provider = this.providers[credentials.provider];
+    const provider = this.providers.get(credentials.provider);
     if (!provider || !provider.clone) return { success: false, message: 'Provider does not support import' };
     return provider.clone(vaultPath, credentials);
   }
 
   async pullFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
-    const provider = this.providers[credentials.provider];
+    const provider = this.providers.get(credentials.provider);
     if (!provider || !provider.pullFile) return { success: false, message: 'Provider does not support pullFile' };
     return provider.pullFile(vaultPath, relativePath, credentials);
   }
 
   async move(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
-    const provider = this.providers[credentials.provider];
+    const provider = this.providers.get(credentials.provider);
     if (!provider || !provider.move) return { success: false, message: 'Provider does not support atomic move' };
     return provider.move(vaultPath, oldRelativePath, newRelativePath, credentials);
+  }
+
+  /**
+   * Lists all Obsync vault folders (Obsync_*) visible to the given credentials.
+   * Returns an empty array if the provider doesn't support listing.
+   */
+  async listVaults(credentials: CloudCredentials): Promise<string[]> {
+    const provider = this.providers.get(credentials.provider);
+    if (!provider) throw new Error(`Unknown provider: ${credentials.provider}`);
+    if (!provider.listVaults) return [];
+    return provider.listVaults(credentials);
   }
 
   /** Wire up token refresh persistence for a provider instance */

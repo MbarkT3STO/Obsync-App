@@ -394,24 +394,12 @@ function getProviderMeta(provider: SyncProviderType) {
         isGit: false,
         hideUrl: false
       };
-    case 's3':
-      return {
-        urlLabel: 'S3 Bucket Name',
-        urlPlaceholder: 'my-obsidian-vault',
-        branchLabel: 'AWS Region',
-        branchPlaceholder: 'us-east-1',
-        hideBranch: false,
-        tokenLabel: 'Access Key:Secret Key',
-        tokenPlaceholder: 'AKIA...:SECRET...',
-        useOAuth: false,
-        isGit: false
-      };
     default:
-      return { 
-        urlLabel: 'Server URL', 
-        urlPlaceholder: '', 
-        branchLabel: 'Branch', 
-        branchPlaceholder: '', 
+      return {
+        urlLabel: 'Server URL',
+        urlPlaceholder: '',
+        branchLabel: 'Branch',
+        branchPlaceholder: '',
         hideBranch: false,
         tokenLabel: 'Access Token / Password',
         tokenPlaceholder: 'Enter token or password',
@@ -1460,7 +1448,7 @@ function resetOAuthButton(btn: HTMLButtonElement): void {
 const PROVIDER_LABELS: Record<string, string> = {
   github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket', 'git-custom': 'Git',
   dropbox: 'Dropbox', googledrive: 'Google Drive', onedrive: 'OneDrive',
-  webdav: 'WebDAV', s3: 'S3',
+  webdav: 'WebDAV',
 };
 
 // Provider SVG icons — inline so no external deps needed
@@ -1483,10 +1471,7 @@ function getProviderIcon(provider: SyncProviderType | null | undefined, size = 2
       return `<svg ${s}><path d="M17.5 19a5.5 5.5 0 0 0 0-11c-.13 0-.25.01-.38.02A7 7 0 1 0 5 13.5c0 .12.01.24.02.36A4.5 4.5 0 0 0 6.5 23h11a5.5 5.5 0 0 0 0-11"/></svg>`;
     case 'webdav':
       return `<svg ${s}><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
-    case 's3':
-      return `<svg ${s}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`;
     default:
-      // Generic vault icon
       return `<svg ${s}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`;
   }
 }

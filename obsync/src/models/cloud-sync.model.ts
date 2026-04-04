@@ -1,4 +1,4 @@
-export type SyncProviderType = 'github' | 'gitlab' | 'bitbucket' | 'git-custom' | 'dropbox' | 'webdav' | 'local' | 's3' | 'googledrive' | 'onedrive';
+export type SyncProviderType = 'github' | 'gitlab' | 'bitbucket' | 'git-custom' | 'dropbox' | 'webdav' | 'local' | 'googledrive' | 'onedrive';
 
 export interface CloudConfig {
   provider: SyncProviderType;
@@ -41,6 +41,7 @@ export interface ICloudProvider {
   clone?(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
   delete?(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult>;
   move?(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult>;
+  listVaults?(credentials: CloudCredentials): Promise<string[]>;
   /** Called by providers when they refresh an OAuth token so it can be persisted */
   onTokenRefreshed?: (newTokenJson: string) => void;
 }

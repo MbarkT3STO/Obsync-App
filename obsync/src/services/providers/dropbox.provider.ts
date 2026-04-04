@@ -133,6 +133,19 @@ export class DropboxCloudProvider implements ICloudProvider {
     }
   }
 
+  async listVaults(credentials: CloudCredentials): Promise<string[]> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const res = await this.apiPost('files/list_folder', token, { path: '', recursive: false });
+      if (res.status !== 200 || !res.data.entries) return [];
+      return (res.data.entries as any[])
+        .filter((e: any) => e['.tag'] === 'folder' && e.name.startsWith('Obsync_'))
+        .map((e: any) => e.name.replace(/^Obsync_/, ''));
+    } catch {
+      return [];
+    }
+  }
+
   async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);

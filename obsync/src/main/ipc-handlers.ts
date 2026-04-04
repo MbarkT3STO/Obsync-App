@@ -5,10 +5,8 @@ import type { CloudCredentials } from '../models/cloud-sync.model';
 import type { AutoSyncConfig } from '../models/history.model';
 import type { VaultService } from '../services/vault.service';
 import type { CloudProviderService } from '../services/cloud-provider.service';
-import type { SyncService } from '../services/sync.service';
 import type { StorageService } from '../services/storage.service';
 import type { HistoryService } from '../services/history.service';
-import type { AutoSyncService } from '../services/autosync.service';
 import type { OAuthService } from '../services/oauth.service';
 import type { GitSyncService } from '../services/git-sync.service';
 import type { SyncProviderType } from '../models/cloud-sync.model';
@@ -24,10 +22,8 @@ function reply<T>(success: boolean, data?: T, error?: string): IpcResponse<T> {
 export function registerIpcHandlers(
   vaultService: VaultService,
   cloudProvider: CloudProviderService,
-  syncService: SyncService,
   storageService: StorageService,
   historyService: HistoryService,
-  autoSyncService: AutoSyncService,
   oauthService: OAuthService,
   getWindow: () => BrowserWindow | null,
   gitSyncService: GitSyncService,
@@ -66,7 +62,6 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.VAULT_REMOVE, async (_event, vaultId: string) => {
     try {
       gitSyncService.stopWatcher(vaultId);
-      autoSyncService.stopWatcher(vaultId);
       vaultService.remove(vaultId);
       return reply(true);
     } catch (err) {
@@ -129,14 +124,8 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.CLOUD_LIST_VAULTS, async (_event, credentials: CloudCredentials) => {
     try {
-      // List cloud vault folders (Obsync_*) for the given provider/credentials
-      const provider = (cloudProvider as any).providers[credentials.provider];
-      if (!provider) return reply(false, undefined, 'Unknown provider');
-      // Use a temp path — providers derive vault name from basename, so we pass root
-      // Each provider's pull() returns entries; we look for top-level Obsync_ folders
-      const result = await provider.listVaults?.(credentials);
-      if (result) return reply(true, result);
-      return reply(true, []); // provider doesn't support listing
+      const vaultNames = await cloudProvider.listVaults(credentials);
+      return reply(true, vaultNames);
     } catch (err) {
       return reply(false, undefined, err instanceof Error ? err.message : 'Failed to list vaults');
     }

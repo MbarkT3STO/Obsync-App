@@ -27,10 +27,8 @@ export class OneDriveCloudProvider implements ICloudProvider {
       const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
       const onedrivePath = `${rootPath}/${relativePath.replace(/\\/g, '/')}`;
-      const encodedPath = encodeURIComponent(onedrivePath);
       
-      const res = await this.graphRequest('DELETE', `me/drive/root:/${encodedPath}`, token);
-      // OneDrive returns 204 No Content on successful delete
+      const res = await this.graphRequest('DELETE', `me/drive/root:/${this.encodePath(onedrivePath)}`, token);
       if (res.status === 204 || res.status === 200) {
         return { success: true, message: `Deleted ${relativePath} from OneDrive` };
       }
@@ -58,8 +56,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
         firstUrl = cursor!;
       } else {
         if (cursor) logger.warn(`OneDrive: discarding invalid cursor "${cursor.slice(0, 40)}..." — starting fresh`);
-        const encodedRoot = encodeURIComponent(rootPath);
-        firstUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/${encodedRoot}:/delta`;
+        firstUrl = `https://graph.microsoft.com/v1.0/me/drive/root:/${this.encodePath(rootPath)}:/delta`;
       }
 
       const allEntries: any[] = [];
@@ -127,9 +124,8 @@ export class OneDriveCloudProvider implements ICloudProvider {
       const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
       const onedrivePath = `${rootPath}/${relativePath.replace(/\\/g, '/')}`;
-      const encodedPath = encodeURIComponent(onedrivePath);
       
-      const content = await this.downloadFile(`me/drive/root:/${encodedPath}:/content`, token);
+      const content = await this.downloadFile(`me/drive/root:/${this.encodePath(onedrivePath)}:/content`, token);
       const localPath = path.join(vaultPath, relativePath);
       const localDir = path.dirname(localPath);
       
@@ -152,12 +148,10 @@ export class OneDriveCloudProvider implements ICloudProvider {
       const rootPath = `Obsync_${vaultName}`;
       const oldPath = `${rootPath}/${oldRelativePath.replace(/\\/g, '/')}`;
       const newPath = `${rootPath}/${newRelativePath.replace(/\\/g, '/')}`;
-      const oldEncoded = encodeURIComponent(oldPath);
       const newDir = path.dirname(newPath);
       const newName = path.basename(newPath);
 
-      // In OneDrive, move/rename is done by PATCHing the parentReference and name
-      const res = await this.graphRequest('PATCH', `me/drive/root:/${oldEncoded}`, token, {
+      const res = await this.graphRequest('PATCH', `me/drive/root:/${this.encodePath(oldPath)}`, token, {
         parentReference: { path: `/drive/root:/${newDir}` },
         name: newName
       });
@@ -181,6 +175,19 @@ export class OneDriveCloudProvider implements ICloudProvider {
       return { success: false, message: `Access denied (Status ${res.status})` };
     } catch (err) {
       return { success: false, message: `Connection failed: ${err instanceof Error ? err.message : 'Unknown'}` };
+    }
+  }
+
+  async listVaults(credentials: CloudCredentials): Promise<string[]> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const res = await this.graphRequest('GET', 'me/drive/root/children?%24select=name%2Cfolder', token);
+      if (res.status !== 200 || !res.data.value) return [];
+      return (res.data.value as any[])
+        .filter((item: any) => item.folder && item.name.startsWith('Obsync_'))
+        .map((item: any) => item.name.replace(/^Obsync_/, ''));
+    } catch {
+      return [];
     }
   }
 
@@ -227,13 +234,10 @@ export class OneDriveCloudProvider implements ICloudProvider {
     );
 
     const scanAndDelete = async (currentPath: string) => {
-      const encodedPath = currentPath.split('/').map(p => encodeURIComponent(p)).join('/');
-      const res = await this.graphRequest('GET', `me/drive/root:/${encodedPath}:/children`, token);
+      const res = await this.graphRequest('GET', `me/drive/root:/${this.encodePath(currentPath)}:/children`, token);
       if (res.status !== 200 || !res.data.value) return;
 
       for (const item of res.data.value) {
-        // Build relPath from the folder we're currently scanning + item name
-        // currentPath is like "Obsync_VaultName/subfolder", rootPath is "Obsync_VaultName"
         const currentRel = currentPath.substring(rootPath.length).replace(/^\//, '');
         const relPath = currentRel ? `${currentRel}/${item.name}` : item.name;
 
@@ -282,7 +286,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
 
       const entries: any[] = [];
       const syncFolder = async (currentPath: string) => {
-        const endpoint = `me/drive/root:/${currentPath}:/children`;
+        const endpoint = `me/drive/root:/${this.encodePath(currentPath)}:/children`;
         const res = await this.graphRequest('GET', endpoint, token);
         
         if (res.status === 404) return;
@@ -323,10 +327,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
 
     // ── Simple upload for files ≤ 4 MB ──────────────────────────────────────
     if (fileSize <= 4 * 1024 * 1024) {
-      const encodedPath = onedrivePath.split('/').map(p => encodeURIComponent(p)).join('/');
-      const res = await this.graphRequest('PUT', `me/drive/root:/${encodedPath}:/content`, token, content, {
-        'Content-Type': 'application/octet-stream',
-      });
+      const res = await this.graphRequest('PUT', `me/drive/root:/${this.encodePath(onedrivePath)}:/content`, token, content);
       if (res.status >= 400) {
         throw new Error(`OneDrive Simple Upload Error (${res.status}): ${JSON.stringify(res.data)}`);
       }
@@ -335,10 +336,9 @@ export class OneDriveCloudProvider implements ICloudProvider {
 
     // ── Resumable upload session for large files ─────────────────────────────
     logger.info(`Starting chunked upload for ${onedrivePath} (${fileSize} bytes)`);
-    const encodedPath = onedrivePath.split('/').map(p => encodeURIComponent(p)).join('/');
     const sessionRes = await this.graphRequest(
       'POST',
-      `me/drive/root:/${encodedPath}:/createUploadSession`,
+      `me/drive/root:/${this.encodePath(onedrivePath)}:/createUploadSession`,
       token,
       { item: { '@microsoft.graph.conflictBehavior': 'replace' } },
     );
@@ -355,7 +355,6 @@ export class OneDriveCloudProvider implements ICloudProvider {
       const chunk = content.slice(start, end);
       const range = `bytes ${start}-${end - 1}/${fileSize}`;
 
-      // The uploadUrl is pre-authenticated — sending Authorization here causes 401.
       const chunkRes = await this.uploadChunk(uploadUrl, chunk, range);
 
       if (chunkRes.status !== 202 && chunkRes.status !== 201 && chunkRes.status !== 200) {
@@ -398,11 +397,12 @@ export class OneDriveCloudProvider implements ICloudProvider {
     });
   }
 
-  private async downloadFile(itemId: string, token: string): Promise<Buffer> {
+  private async downloadFile(encodedEndpoint: string, token: string): Promise<Buffer> {
+    // encodedEndpoint is already encoded by the caller (e.g. "me/drive/root:/Obsync_X%2FNotes.md:/content")
     return new Promise((resolve, reject) => {
       const options = {
         hostname: 'graph.microsoft.com',
-        path: `/v1.0/me/drive/items/${itemId}/content`,
+        path: `/v1.0/${encodedEndpoint}`,
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -412,17 +412,16 @@ export class OneDriveCloudProvider implements ICloudProvider {
 
       const req = https.request(options, (res) => {
         if (res.statusCode === 302) {
-          // Handle redirect
           const redirectUrl = res.headers.location;
-          if (!redirectUrl) return reject(new Error('No redirect URL provided for OneDrive download'));
+          if (!redirectUrl) return reject(new Error('No redirect URL for OneDrive download'));
           https.get(redirectUrl, (redirectRes) => {
             const chunks: Buffer[] = [];
-            redirectRes.on('data', chunk => chunks.push(chunk));
+            redirectRes.on('data', (c: Buffer) => chunks.push(c));
             redirectRes.on('end', () => resolve(Buffer.concat(chunks)));
           }).on('error', reject);
         } else {
           const chunks: Buffer[] = [];
-          res.on('data', chunk => chunks.push(chunk));
+          res.on('data', (c: Buffer) => chunks.push(c));
           res.on('end', () => resolve(Buffer.concat(chunks)));
         }
       });
@@ -431,63 +430,65 @@ export class OneDriveCloudProvider implements ICloudProvider {
     });
   }
 
-  private async graphRequest(method: string, endpoint: string, token: string, body?: any, extraHeaders?: any, isFullUrl = false): Promise<any> {
+  /**
+   * Encodes each segment of a slash-separated path with encodeURIComponent,
+   * preserving the `/` separators. Used for Graph API path-based addressing:
+   *   me/drive/root:/{encodePath(path)}:/content
+   */
+  private encodePath(p: string): string {
+    return p.split('/').map(segment => encodeURIComponent(segment)).join('/');
+  }
+
+  private async graphRequest(method: string, endpoint: string, token: string, body?: any, extraHeaders?: Record<string, string>, isFullUrl = false): Promise<any> {
     return new Promise((resolve, reject) => {
-      let options: any;
+      const isBuffer = body instanceof Buffer;
+      const isJson = body && typeof body === 'object' && !isBuffer;
+
+      // Serialise body up front so we know the exact byte length
+      const bodyBytes: Buffer | null = body
+        ? (isBuffer ? body : Buffer.from(JSON.stringify(body), 'utf8'))
+        : null;
+
+      let hostname: string;
+      let urlPath: string;
 
       if (isFullUrl) {
         const url = new URL(endpoint);
-        options = {
-          hostname: url.hostname,
-          path: url.pathname + url.search,
-          method: method,
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'User-Agent': 'Obsync/1.0.0',
-            ...(body && typeof body === 'object' && !(body instanceof Buffer)
-              ? { 'Content-Type': 'application/json' }
-              : {}),
-            ...extraHeaders,
-          },
-        };
+        hostname = url.hostname;
+        urlPath = url.pathname + url.search;
       } else {
-        const encodedEndpoint = endpoint.split('/').map(part => {
-          return part.includes('%') ? part : encodeURIComponent(part);
-        }).join('/').replace(/%3A/g, ':');
-
-        options = {
-          hostname: 'graph.microsoft.com',
-          path: `/v1.0/${encodedEndpoint}`,
-          method: method,
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'User-Agent': 'Obsync/1.0.0',
-            'Content-Type': body && typeof body === 'object' && !(body instanceof Buffer) ? 'application/json' : '',
-            ...extraHeaders
-          }
-        };
+        hostname = 'graph.microsoft.com';
+        // endpoint is already correctly encoded by the caller — use as-is
+        urlPath = `/v1.0/${endpoint}`;
       }
 
+      const headers: Record<string, string> = {
+        'Authorization': `Bearer ${token}`,
+        'User-Agent': 'Obsync/1.0.0',
+        ...extraHeaders,
+      };
+
+      if (bodyBytes) {
+        headers['Content-Type'] = isJson ? 'application/json' : 'application/octet-stream';
+        headers['Content-Length'] = bodyBytes.length.toString();
+      }
+
+      const options = { hostname, path: urlPath, method, headers };
+
       const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
         res.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8');
           try {
-            const json = data ? JSON.parse(data) : {};
-            resolve({ status: res.statusCode || 0, data: json });
-          } catch (e) {
-            resolve({ status: res.statusCode || 0, data });
+            resolve({ status: res.statusCode ?? 0, data: raw ? JSON.parse(raw) : {} });
+          } catch {
+            resolve({ status: res.statusCode ?? 0, data: raw });
           }
         });
       });
       req.on('error', reject);
-      if (body) {
-        if (typeof body === 'object' && !(body instanceof Buffer)) {
-          req.write(JSON.stringify(body));
-        } else {
-          req.write(body);
-        }
-      }
+      if (bodyBytes) req.write(bodyBytes);
       req.end();
     });
   }

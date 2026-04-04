@@ -8,11 +8,8 @@ dotenv.config();
 import { StorageService } from '../services/storage.service';
 import { VaultService } from '../services/vault.service';
 import { CloudProviderService } from '../services/cloud-provider.service';
-import { SyncService } from '../services/sync.service';
 import { HistoryService } from '../services/history.service';
-import { AutoSyncService } from '../services/autosync.service';
 import { OAuthService } from '../services/oauth.service';
-import { ManifestService } from '../services/manifest.service';
 import { GitSyncService } from '../services/git-sync.service';
 import { TrayManager } from './tray';
 import { registerIpcHandlers } from './ipc-handlers';
@@ -24,12 +21,8 @@ const logger = createLogger('Main');
 const storageService  = new StorageService();
 const vaultService    = new VaultService(storageService);
 const cloudProvider   = new CloudProviderService(storageService);
-const manifestService = new ManifestService();
 const historyService  = new HistoryService(vaultService, cloudProvider);
 const gitSyncService  = new GitSyncService(vaultService, cloudProvider, historyService, storageService);
-// Keep legacy services for backward compat with IPC handlers that still reference them
-const syncService     = new SyncService(vaultService, cloudProvider, manifestService, historyService);
-const autoSyncService = new AutoSyncService(storageService, vaultService, syncService);
 const oauthService    = new OAuthService();
 
 let mainWindow: BrowserWindow | null = null;
@@ -128,8 +121,8 @@ app.whenReady().then(() => {
   const cfg = storageService.load();
   applyLoginItemSetting(cfg.settings.launchOnStartup ?? true);
   registerIpcHandlers(
-    vaultService, cloudProvider, syncService,
-    storageService, historyService, autoSyncService,
+    vaultService, cloudProvider,
+    storageService, historyService,
     oauthService,
     () => mainWindow,
     gitSyncService,

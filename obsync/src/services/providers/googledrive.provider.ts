@@ -228,6 +228,20 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
     }
   }
 
+  async listVaults(credentials: CloudCredentials): Promise<string[]> {
+    try {
+      const token = await this.getValidToken(credentials);
+      const q = encodeURIComponent(`'root' in parents and mimeType = 'application/vnd.google-apps.folder' and name contains 'Obsync_' and trashed = false`);
+      const res = await this.driveApiRequest('GET', `files?q=${q}&fields=files(name)`, token);
+      if (!res.data.files) return [];
+      return (res.data.files as any[])
+        .filter((f: any) => f.name.startsWith('Obsync_'))
+        .map((f: any) => f.name.replace(/^Obsync_/, ''));
+    } catch {
+      return [];
+    }
+  }
+
   async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);

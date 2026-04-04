@@ -24,7 +24,7 @@ import { createLogger } from '../utils/logger.util';
 import { getChokidarIgnorePatterns, collectVaultFiles } from '../utils/obsidian-filter.util';
 import { withRetry } from '../utils/retry.util';
 import { IPC } from '../config/ipc-channels';
-import type { SyncResult, CloudCredentials } from '../models/cloud-sync.model';
+import type { SyncResult, CloudCredentials, ICloudProvider } from '../models/cloud-sync.model';
 import type { VaultSyncStatus } from '../models/vault.model';
 import type { VaultService } from './vault.service';
 import type { CloudProviderService } from './cloud-provider.service';
@@ -65,11 +65,15 @@ interface WatcherEntry {
   // Track pending changes by type so we handle deletes/renames correctly
   pendingUpserts: Set<string>; // vault-relative paths to upload
   pendingDeletes: Set<string>; // vault-relative paths to delete from cloud
+  // Prevent poll-pull from running concurrently with a flush
+  flushing: boolean;
 }
 
 export class GitSyncService {
   private statusMap = new Map<string, VaultSyncStatus>();
   private watchers = new Map<string, WatcherEntry>();
+  // Tracks paths uploaded in the current push so cloudFilePull won't re-download them
+  private recentlyPushed = new Map<string, number>(); // relPath → timestamp
 
   constructor(
     private readonly vaultService: VaultService,
@@ -295,6 +299,7 @@ export class GitSyncService {
       pollInterval: null,
       pendingUpserts: new Set(),
       pendingDeletes: new Set(),
+      flushing: false,
     };
 
     entry.watcher = chokidar.watch(vault.localPath, {
@@ -320,7 +325,12 @@ export class GitSyncService {
         for (const p of upserts) deletes.delete(p);
 
         logger.info(`Auto-sync flush: ${upserts.size} upsert(s), ${deletes.size} delete(s)`);
-        await this.flushChanges(vaultId, vault.localPath, upserts, deletes, window);
+        entry.flushing = true;
+        try {
+          await this.flushChanges(vaultId, vault.localPath, upserts, deletes, window);
+        } finally {
+          entry.flushing = false;
+        }
         window.webContents.send(IPC.EVENT_AUTOSYNC_TRIGGERED, { vaultId });
       }, debounceMs);
     };
@@ -332,6 +342,11 @@ export class GitSyncService {
     entry.watcher.on('error',     (e) => logger.error('Watcher error', e));
 
     entry.pollInterval = setInterval(async () => {
+      // Skip poll if a flush is in progress — avoids downloading files mid-rename
+      if (entry.flushing) {
+        logger.info(`Auto-sync: skipping poll for vault ${vaultId} (flush in progress)`);
+        return;
+      }
       logger.info(`Auto-sync: polling remote for vault ${vaultId}`);
       await this.pull(vaultId, window, true);
     }, pollMs);
@@ -363,7 +378,6 @@ export class GitSyncService {
     }
 
     if (GIT_PROVIDERS.has(creds.provider)) {
-      // For git providers just do a normal push
       await this.gitRemotePush(git, creds).catch(e =>
         logger.error('Auto-sync git push failed:', e)
       );
@@ -374,25 +388,50 @@ export class GitSyncService {
     if (!provider) return;
     this.wireTokenRefresh(provider, vaultId);
 
-    // Upload upserted files
-    for (const relPath of upserts) {
-      const absPath = path.join(vaultPath, relPath);
-      if (!fs.existsSync(absPath)) {
-        // File was deleted before debounce fired — treat as delete
-        deletes.add(relPath);
-        continue;
-      }
+    // ── Rename detection ───────────────────────────────────────────────────
+    // Use git's own rename detection from the commit we just made.
+    // git diff HEAD~1 HEAD --name-status -M detects renames natively.
+    // This is reliable because the commit already recorded the rename.
+    const renames = new Map<string, string>(); // oldPath → newPath
+
+    if (provider.move && deletes.size > 0 && upserts.size > 0) {
       try {
-        if (provider.pushFile) {
-          await withRetry<SyncResult>(() => provider.pushFile!(vaultPath, relPath, creds));
-          logger.info(`Auto-sync: uploaded ${relPath}`);
+        const diffOutput = await git.raw([
+          'diff', 'HEAD~1', 'HEAD', '--name-status', '-M90', '--diff-filter=R'
+        ]).catch(() => '');
+
+        // Output format: "R100\toldName.md\tnewName.md"
+        for (const line of diffOutput.split('\n')) {
+          const parts = line.split('\t');
+          if (parts.length === 3 && parts[0]!.startsWith('R')) {
+            const oldPath = parts[1]!.trim();
+            const newPath = parts[2]!.trim();
+            // Only treat as rename if both sides are in our pending sets
+            if (deletes.has(oldPath) && upserts.has(newPath)) {
+              renames.set(oldPath, newPath);
+              logger.info(`Rename detected via git: ${oldPath} → ${newPath}`);
+            }
+          }
         }
+      } catch { /* git diff failed — no rename detection, fall through */ }
+    }
+
+    // ── Step 1: Execute renames atomically on cloud ────────────────────────
+    for (const [oldPath, newPath] of renames) {
+      try {
+        await withRetry<SyncResult>(() => provider.move!(vaultPath, oldPath, newPath, creds));
+        logger.info(`Auto-sync: moved ${oldPath} → ${newPath} on cloud`);
+        // Remove from the individual upsert/delete sets — handled as rename
+        upserts.delete(newPath);
+        deletes.delete(oldPath);
+        this.recentlyPushed.set(newPath, Date.now());
       } catch (e) {
-        logger.error(`Auto-sync: failed to upload ${relPath}:`, e);
+        logger.warn(`Auto-sync: move failed for ${oldPath} → ${newPath}, falling back to delete+upload:`, e);
+        // Leave in upserts/deletes to be handled below
       }
     }
 
-    // Delete removed files from cloud
+    // ── Step 2: Delete removed files FIRST to avoid both names on cloud ────
     for (const relPath of deletes) {
       try {
         if (provider.delete) {
@@ -401,6 +440,24 @@ export class GitSyncService {
         }
       } catch (e) {
         logger.error(`Auto-sync: failed to delete ${relPath} from cloud:`, e);
+      }
+    }
+
+    // ── Step 3: Upload new/modified files ──────────────────────────────────
+    for (const relPath of upserts) {
+      const absPath = path.join(vaultPath, relPath);
+      if (!fs.existsSync(absPath)) {
+        // Disappeared before debounce fired — already deleted above if needed
+        continue;
+      }
+      try {
+        if (provider.pushFile) {
+          await withRetry<SyncResult>(() => provider.pushFile!(vaultPath, relPath, creds));
+          logger.info(`Auto-sync: uploaded ${relPath}`);
+          this.recentlyPushed.set(relPath, Date.now());
+        }
+      } catch (e) {
+        logger.error(`Auto-sync: failed to upload ${relPath}:`, e);
       }
     }
 
@@ -617,6 +674,16 @@ export class GitSyncService {
 
     // provider.push() uploads all local files and removes cloud orphans (cleanupRemote)
     const pushResult = await withRetry<SyncResult>(() => provider.push(vaultPath, creds));
+
+    // Mark all local files as recently pushed so the next pull won't re-download them
+    if (pushResult.success) {
+      const now = Date.now();
+      for (const absPath of collectVaultFiles(vaultPath)) {
+        const rel = path.relative(vaultPath, absPath).replace(/\\/g, '/');
+        this.recentlyPushed.set(rel, now);
+      }
+    }
+
     return pushResult;
   }
 
@@ -669,8 +736,17 @@ export class GitSyncService {
     const failed: string[] = [];
 
     // ── Download: files on cloud that are new or newer than local ─────────
+    const RECENTLY_PUSHED_TTL = 30_000; // 30 seconds
+    const now = Date.now();
     const toDownload: string[] = [];
     for (const [relPath, cloud] of cloudFiles) {
+      // Skip files we just uploaded — their cloud lastmod will be newer than
+      // local mtime (server receipt time), which would cause a spurious re-download
+      const pushedAt = this.recentlyPushed.get(relPath);
+      if (pushedAt && now - pushedAt < RECENTLY_PUSHED_TTL) {
+        logger.info(`cloudFilePull: skipping recently pushed file ${relPath}`);
+        continue;
+      }
       const local = localFiles.get(relPath);
       if (!local) {
         // New file on cloud
@@ -682,6 +758,10 @@ export class GitSyncService {
           toDownload.push(relPath);
         }
       }
+    }
+    // Evict expired entries from recentlyPushed
+    for (const [p, t] of this.recentlyPushed) {
+      if (now - t >= RECENTLY_PUSHED_TTL) this.recentlyPushed.delete(p);
     }
 
     this.emitStatus(window, vaultId, 'syncing',
@@ -832,11 +912,11 @@ export class GitSyncService {
 
   // ── Provider access ────────────────────────────────────────────────────────
 
-  private getProvider(creds: CloudCredentials): any {
-    return (this.cloudProvider as any).providers[creds.provider] ?? null;
+  private getProvider(creds: CloudCredentials): ICloudProvider | null {
+    return this.cloudProvider.getProvider(creds.provider);
   }
 
-  private wireTokenRefresh(provider: any, vaultId: string): void {
+  private wireTokenRefresh(provider: ICloudProvider, vaultId: string): void {
     provider.onTokenRefreshed = (newTokenJson: string) => {
       this.cloudProvider.persistRefreshedToken(vaultId, newTokenJson);
     };
