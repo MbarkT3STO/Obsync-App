@@ -78,6 +78,8 @@ let selectedVaultId: string | null = null;
 let currentProvider: SyncProviderType = 'github';
 let currentImportProvider: SyncProviderType = 'github';
 let currentConflicts: { vaultId: string, files: string[] } | null = null;
+// Cache provider per vault so icons can be shown without extra IPC calls
+const vaultProviderCache = new Map<string, SyncProviderType>();
 
 // ── DOM refs ───────────────────────────────────────────────────────────────
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -498,6 +500,11 @@ async function loadVaults(): Promise<void> {
   const res = await window.obsync.vault.list();
   if (res.success && res.data) {
     vaults = res.data;
+    // Populate provider cache for all vaults
+    await Promise.all(vaults.map(async (v) => {
+      const cfg = await window.obsync.cloud.getConfig(v.id);
+      if (cfg.success && cfg.data) vaultProviderCache.set(v.id, cfg.data.provider);
+    }));
     renderVaultList();
   }
 }
@@ -525,10 +532,7 @@ function renderVaultList(): void {
     if (vault.id === selectedVaultId) li.classList.add('active');
 
     li.innerHTML = `
-      <svg class="item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        <polyline points="9 22 9 12 15 12 15 22"/>
-      </svg>
+      ${getProviderIcon(vaultProviderCache.get(vault.id), 18).replace('stroke="currentColor"', 'stroke="currentColor" class="item-icon"')}
       <span class="item-name">${escapeHtml(vault.name)}</span>
       <span class="item-status" data-vault-status="${vault.id}"></span>
     `;
@@ -583,7 +587,9 @@ async function selectVault(vaultId: string): Promise<void> {
     const m = getProviderMeta(provider);
     cloudVaultNameGroup.style.display = m.isGit ? 'none' : '';
 
-    // Show provider badge in vault header
+    // Update vault icon and provider badge
+    vaultProviderCache.set(vaultId, provider);
+    updateVaultDetailIcon(provider);
     updateProviderBadge(provider);
   } else {
     providerSelect.setValue('github');
@@ -591,6 +597,7 @@ async function selectVault(vaultId: string): Promise<void> {
     inputBranch.value = 'main';
     inputCloudVaultName.value = '';
     cloudVaultNameGroup.style.display = 'none';
+    updateVaultDetailIcon(null);
     updateProviderBadge(null);
   }
   inputToken.value = '';
@@ -1111,6 +1118,11 @@ async function handleSaveConfig(e: Event): Promise<void> {
   if (initRes.success) {
     showToast('Configuration saved', 'success');
     inputToken.value = '';
+    // Update provider cache and icon immediately
+    vaultProviderCache.set(selectedVaultId, provider);
+    updateVaultDetailIcon(provider);
+    updateProviderBadge(provider);
+    renderVaultList(); // refresh sidebar icons
   } else {
     showToast(initRes.error ?? 'Saved config but init failed', 'warning');
   }
@@ -1302,10 +1314,7 @@ function renderDashboard(query: string = ''): void {
     card.innerHTML = `
       <div class="vault-card-header">
         <div class="vault-card-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="9 22 9 12 15 12 15 22"/>
-          </svg>
+          ${getProviderIcon(vaultProviderCache.get(vault.id), 20)}
         </div>
         <div style="min-width:0; flex:1">
           <div class="vault-card-name">${escapeHtml(vault.name)}</div>
@@ -1454,6 +1463,34 @@ const PROVIDER_LABELS: Record<string, string> = {
   webdav: 'WebDAV', s3: 'S3',
 };
 
+// Provider SVG icons — inline so no external deps needed
+function getProviderIcon(provider: SyncProviderType | null | undefined, size = 20): string {
+  const s = `width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"`;
+  switch (provider) {
+    case 'github':
+      return `<svg ${s}><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>`;
+    case 'gitlab':
+      return `<svg ${s}><path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.72 3.11-9.48a.84.84 0 0 1 1.59 0l3.03 9.24h4l3.03-9.24a.84.84 0 0 1 1.59 0l3.11 9.48 1.22 3.72a.84.84 0 0 1-.3.94z"/></svg>`;
+    case 'bitbucket':
+      return `<svg ${s}><path d="M4 3h16l2 11-10 7-10-7 2-11z"/><path d="M12 3v18"/></svg>`;
+    case 'git-custom':
+      return `<svg ${s}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>`;
+    case 'dropbox':
+      return `<svg ${s}><path d="M21 8l-9-6-9 6 9 6 9-6zM3 8v8l9 6 9-6V8L12 14 3 8z"/></svg>`;
+    case 'googledrive':
+      return `<svg ${s}><path d="M12 2L2 19h20L12 2z"/></svg>`;
+    case 'onedrive':
+      return `<svg ${s}><path d="M17.5 19a5.5 5.5 0 0 0 0-11c-.13 0-.25.01-.38.02A7 7 0 1 0 5 13.5c0 .12.01.24.02.36A4.5 4.5 0 0 0 6.5 23h11a5.5 5.5 0 0 0 0-11"/></svg>`;
+    case 'webdav':
+      return `<svg ${s}><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>`;
+    case 's3':
+      return `<svg ${s}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>`;
+    default:
+      // Generic vault icon
+      return `<svg ${s}><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`;
+  }
+}
+
 function updateProviderBadge(provider: SyncProviderType | null): void {
   let badge = document.getElementById('provider-badge');
   if (!badge) {
@@ -1469,6 +1506,12 @@ function updateProviderBadge(provider: SyncProviderType | null): void {
   } else {
     badge.style.display = 'none';
   }
+}
+
+function updateVaultDetailIcon(provider: SyncProviderType | null | undefined): void {
+  const iconContainer = document.querySelector('.vault-icon') as HTMLElement | null;
+  if (!iconContainer) return;
+  iconContainer.innerHTML = getProviderIcon(provider, 22);
 }
 
 function setButtonLoading(btn: HTMLButtonElement, loading: boolean): void {
