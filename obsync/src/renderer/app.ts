@@ -176,8 +176,6 @@ function showConflictModal(vaultId: string, conflicts: Array<{ filePath: string 
   conflictList.innerHTML = '';
   for (const c of conflicts) {
     const li = document.createElement('li');
-    li.style.padding = '8px 0';
-    li.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
     li.textContent = c.filePath;
     conflictList.appendChild(li);
   }
@@ -731,6 +729,7 @@ function registerEventListeners(): void {
   });
 
   btnImportCancel.addEventListener('click', () => importModal.classList.add('hidden'));
+  document.getElementById('btn-import-close-x')?.addEventListener('click', () => importModal.classList.add('hidden'));
 
   btnImportStart.addEventListener('click', async () => {
     const provider = importProviderSelect.getValue() as SyncProviderType;
@@ -1017,6 +1016,7 @@ async function handleValidate(): Promise<void> {
     finalToken = JSON.stringify({ url: repoUrl, username: branch, password: token });
   }
 
+  setButtonLoading(btnValidate, true);
   const res = await window.obsync.cloud.validate({ 
     provider, 
     token: finalToken, 
@@ -1143,6 +1143,9 @@ async function handleAutoSyncDebounceChange(): Promise<void> {
 
 async function handleShowHistory(): Promise<void> {
   if (!selectedVaultId) return;
+  const vault = vaults.find(v => v.id === selectedVaultId);
+  const titleEl = document.getElementById('history-title');
+  if (titleEl) titleEl.textContent = vault ? `History — ${vault.name}` : 'Sync History';
   historyModal.classList.remove('hidden');
   historyList.innerHTML = '<div class="history-loading">Loading commits...</div>';
 
@@ -1434,10 +1437,14 @@ function showToast(message: string, type: 'success' | 'error' | 'warning' | 'inf
   toast.innerHTML = `${TOAST_ICONS[type] ?? ''}<span>${escapeHtml(message)}</span>`;
   container.appendChild(toast);
 
-  setTimeout(() => {
+  const dismiss = () => {
     toast.classList.add('toast-fade-out');
-    toast.addEventListener('animationend', () => toast.remove());
-  }, 3500);
+    toast.addEventListener('animationend', () => toast.remove(), { once: true });
+  };
+  toast.addEventListener('click', dismiss);
+
+  const duration = type === 'error' ? 5000 : type === 'success' ? 2500 : 3500;
+  setTimeout(dismiss, duration);
 }
 
 function toggleTokenVisibility(): void {

@@ -384,6 +384,7 @@
                 </svg>
                 Save &amp; Initialize
               </button>
+              <span class="field-hint" style="margin-left:auto;align-self:center"><kbd class="kbd">Ctrl+S</kbd> to save</span>
             </div>
           </form>
         </section>
@@ -526,8 +527,15 @@
 <!-- Import Modal -->
 <div class="modal-overlay hidden" id="import-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
   <div class="modal">
-    <h2 id="import-title">Import Vault from Cloud</h2>
-    <p>Select your provider and enter the repository details to clone.</p>
+    <div class="modal-header">
+      <h2 id="import-title">Import Vault from Cloud</h2>
+      <button class="btn-icon" id="btn-import-close-x" aria-label="Close import">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <p style="color:var(--text-secondary);font-size:13px;margin-bottom:16px">Select your provider and enter the repository details to clone.</p>
     
     <div class="form-grid">
       <div class="form-group">
