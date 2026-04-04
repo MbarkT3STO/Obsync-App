@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('obsync', {
     getConfig: (vaultId: string) => ipcRenderer.invoke(IPC.CLOUD_GET_CONFIG, vaultId),
     validate: (credentials: CloudCredentials) => ipcRenderer.invoke(IPC.CLOUD_VALIDATE, credentials),
     signIn: (provider: string) => ipcRenderer.invoke(IPC.CLOUD_SIGN_IN, provider),
+    listVaults: (credentials: CloudCredentials) => ipcRenderer.invoke(IPC.CLOUD_LIST_VAULTS, credentials),
   },
   sync: {
     init: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_INIT, vaultId),

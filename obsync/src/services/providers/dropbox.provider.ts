@@ -6,6 +6,7 @@ import { PathUtils } from '../../utils/path.util';
 import { withRetry } from '../../utils/retry.util';
 import { shouldSkipDir, shouldSyncFile, collectVaultFiles } from '../../utils/obsidian-filter.util';
 import type { CloudCredentials, ICloudProvider, SyncResult } from '../../models/cloud-sync.model';
+import { getCloudVaultName } from '../../utils/vault-name.util';
 
 const logger = createLogger('DropboxCloudProvider');
 
@@ -19,7 +20,7 @@ export class DropboxCloudProvider implements ICloudProvider {
   async getChanges(vaultPath: string, credentials: CloudCredentials, cursor?: string): Promise<SyncResult & { cursor?: string; entries?: any[] }> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootDir = `/Obsync_${vaultName}`;
 
       let res;
@@ -76,7 +77,7 @@ export class DropboxCloudProvider implements ICloudProvider {
   async delete(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const dbxPath = `/Obsync_${vaultName}/${relativePath.replace(/\\/g, '/')}`;
       
       const res = await this.apiPost('files/delete_v2', token, { path: dbxPath });
@@ -97,7 +98,7 @@ export class DropboxCloudProvider implements ICloudProvider {
   async move(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootDir = `/Obsync_${vaultName}`;
       const fromPath = `${rootDir}/${oldRelativePath.replace(/\\/g, '/')}`;
       const toPath = `${rootDir}/${newRelativePath.replace(/\\/g, '/')}`;
@@ -135,7 +136,7 @@ export class DropboxCloudProvider implements ICloudProvider {
   async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootDir = `/Obsync_${vaultName}`;
 
       const files = collectVaultFiles(vaultPath);
@@ -206,7 +207,7 @@ export class DropboxCloudProvider implements ICloudProvider {
   async pushFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const dbxPath = `/Obsync_${vaultName}/${relativePath.replace(/\\/g, '/')}`;
       const fullPath = path.join(vaultPath, relativePath);
       if (!fs.existsSync(fullPath)) return { success: false, message: 'Local file not found' };
@@ -222,7 +223,7 @@ export class DropboxCloudProvider implements ICloudProvider {
   async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult & { entries?: any[] }> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootDir = `/Obsync_${vaultName}`;
 
       const entries: any[] = [];
@@ -261,7 +262,7 @@ export class DropboxCloudProvider implements ICloudProvider {
   async pullFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const dbxPath = `/Obsync_${vaultName}/${relativePath.replace(/\\/g, '/')}`;
       
       const content = await this.downloadFile(dbxPath, token);

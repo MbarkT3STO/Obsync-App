@@ -28,6 +28,7 @@ interface ObsyncAPI {
     getConfig(vaultId: string): Promise<IpcResponse<{ provider: SyncProviderType; meta: Record<string, any>; token?: string }>>;
     validate(creds: CloudCredentials): Promise<IpcResponse<boolean>>;
     signIn(provider: SyncProviderType): Promise<IpcResponse<string>>;
+    listVaults(creds: CloudCredentials): Promise<IpcResponse<string[]>>;
   };
   sync: {
     init(vaultId: string): Promise<IpcResponse<void>>;
@@ -100,6 +101,8 @@ const cloudForm       = $<HTMLFormElement>('cloud-form');
 const inputRepoUrl    = $<HTMLInputElement>('input-repo-url');
 const inputBranch     = $<HTMLInputElement>('input-branch');
 const inputToken      = $<HTMLInputElement>('input-token');
+const inputCloudVaultName = $<HTMLInputElement>('input-cloud-vault-name');
+const cloudVaultNameGroup = $('cloud-vault-name-group');
 const btnValidate     = $<HTMLButtonElement>('btn-validate');
 const btnSaveConfig   = $<HTMLButtonElement>('btn-save-config');
 const btnToggleToken  = $<HTMLButtonElement>('btn-toggle-token');
@@ -204,6 +207,8 @@ const inputImportRepo  = $<HTMLInputElement>('import-repo-url');
 const inputImportBranch = $<HTMLInputElement>('import-branch');
 const inputImportToken = $<HTMLInputElement>('import-token');
 const inputImportPath  = $<HTMLInputElement>('import-local-path');
+const inputImportCloudName = $<HTMLInputElement>('import-cloud-name');
+const importCloudNameGroup = $('import-cloud-name-group');
 const btnImportBrowse  = $<HTMLButtonElement>('btn-import-browse');
 const btnImportCancel  = $<HTMLButtonElement>('btn-import-cancel');
 const btnImportStart   = $<HTMLButtonElement>('btn-import-start');
@@ -304,6 +309,9 @@ function initCustomSelects() {
     inputImportToken.value = '';
     resetOAuthButton(btnImportOAuth);
     updateLabel(val as SyncProviderType, importLabelUrl, importLabelBranch, inputImportRepo, inputImportBranch, importLabelToken, inputImportToken, btnImportOAuth);
+    // Show cloud vault name field only for non-Git providers
+    const m = getProviderMeta(val as SyncProviderType);
+    importCloudNameGroup.style.display = m.isGit ? 'none' : '';
   });
 
   providerSelect.setValue('github');
@@ -435,6 +443,13 @@ function updateLabel(
     }
   }
 
+  // Show cloud vault name field only for non-Git providers (main config form only)
+  if (cloudVaultNameGroup && !meta.isGit) {
+    cloudVaultNameGroup.style.display = '';
+  } else if (cloudVaultNameGroup) {
+    cloudVaultNameGroup.style.display = 'none';
+  }
+
   if (btnOAuth) {
     if (meta.useOAuth) {
       btnOAuth.classList.remove('hidden');
@@ -520,7 +535,7 @@ async function selectVault(vaultId: string): Promise<void> {
   if (configRes.success && configRes.data) {
     const { provider, meta, token } = configRes.data;
     providerSelect.setValue(provider);
-    
+
     if (provider === 'webdav' && token) {
       try {
         const data = JSON.parse(token);
@@ -534,10 +549,17 @@ async function selectVault(vaultId: string): Promise<void> {
       inputRepoUrl.value = meta?.repoUrl || '';
       inputBranch.value = meta?.branch || 'main';
     }
+
+    // Load cloud vault name for non-Git providers
+    inputCloudVaultName.value = meta?.cloudVaultName || '';
+    const m = getProviderMeta(provider);
+    cloudVaultNameGroup.style.display = m.isGit ? 'none' : '';
   } else {
     providerSelect.setValue('github');
     inputRepoUrl.value = '';
     inputBranch.value = 'main';
+    inputCloudVaultName.value = '';
+    cloudVaultNameGroup.style.display = 'none';
   }
   inputToken.value = '';
 
@@ -667,9 +689,9 @@ function registerEventListeners(): void {
     inputImportBranch.value = 'main';
     inputImportToken.value = '';
     inputImportPath.value = '';
-    // Reset OAuth button state
+    inputImportCloudName.value = '';
+    importCloudNameGroup.style.display = 'none';
     resetOAuthButton(btnImportOAuth);
-    // Trigger label update so fields show correctly for the default provider
     updateLabel('github', importLabelUrl, importLabelBranch, inputImportRepo, inputImportBranch, importLabelToken, inputImportToken, btnImportOAuth);
   });
 
@@ -688,6 +710,7 @@ function registerEventListeners(): void {
     const branch = inputImportBranch.value.trim() || 'main';
     const token = inputImportToken.value.trim();
     const localPath = inputImportPath.value.trim();
+    const cloudVaultName = inputImportCloudName.value.trim();
 
     const meta = getProviderMeta(provider);
 
@@ -721,7 +744,7 @@ function registerEventListeners(): void {
       const res = await window.obsync.vault.clone(localPath, {
         provider,
         token: finalToken,
-        meta: { repoUrl, branch },
+        meta: { repoUrl, branch, cloudVaultName: cloudVaultName || undefined },
       });
       if (res.success && res.data) {
         showToast('Vault imported successfully', 'success');
@@ -940,6 +963,7 @@ async function handleSaveConfig(e: Event): Promise<void> {
   const token = inputToken.value.trim();
   const repoUrl = inputRepoUrl.value.trim();
   const branch = inputBranch.value.trim() || 'main';
+  const cloudVaultName = inputCloudVaultName.value.trim();
 
   const meta = getProviderMeta(provider);
 
@@ -948,9 +972,20 @@ async function handleSaveConfig(e: Event): Promise<void> {
     return;
   }
 
-  if (!token) {
+  if (!token && !meta.useOAuth) {
     showToast('Access token / password is required', 'warning');
     return;
+  }
+
+  // For OAuth providers, token may already be stored — only require it if not yet saved
+  if (meta.useOAuth && !token) {
+    // Check if there's already a saved token
+    const existing = await window.obsync.cloud.getConfig(selectedVaultId);
+    if (!existing.success) {
+      showToast(`Please sign in with ${provider} first`, 'warning');
+      return;
+    }
+    // Use existing token — don't overwrite with empty
   }
 
   setButtonLoading(btnSaveConfig, true);
@@ -960,22 +995,41 @@ async function handleSaveConfig(e: Event): Promise<void> {
     finalToken = JSON.stringify({ url: repoUrl, username: branch, password: token });
   }
 
-  const saveRes = await window.obsync.cloud.saveConfig(selectedVaultId, { 
-    provider, 
-    token: finalToken, 
-    meta: { repoUrl, branch } 
-  });
-  if (!saveRes.success) {
-    showToast(saveRes.error ?? 'Failed to save config', 'error');
-    setButtonLoading(btnSaveConfig, false);
-    return;
+  // Build meta — include cloudVaultName for non-Git providers
+  const saveMeta: Record<string, any> = { repoUrl, branch };
+  if (!meta.isGit && cloudVaultName) {
+    saveMeta['cloudVaultName'] = cloudVaultName;
+  }
+
+  // Only save if we have a token (don't overwrite existing token with empty)
+  if (finalToken) {
+    const saveRes = await window.obsync.cloud.saveConfig(selectedVaultId, {
+      provider,
+      token: finalToken,
+      meta: saveMeta,
+    });
+    if (!saveRes.success) {
+      showToast(saveRes.error ?? 'Failed to save config', 'error');
+      setButtonLoading(btnSaveConfig, false);
+      return;
+    }
+  } else {
+    // Update meta only (token unchanged) — re-save with existing token
+    const existing = await window.obsync.cloud.getConfig(selectedVaultId);
+    if (existing.success) {
+      await window.obsync.cloud.saveConfig(selectedVaultId, {
+        provider,
+        token: '__keep_existing__', // signal to backend to keep existing token
+        meta: saveMeta,
+      });
+    }
   }
 
   const initRes = await window.obsync.sync.init(selectedVaultId);
   setButtonLoading(btnSaveConfig, false);
 
   if (initRes.success) {
-    showToast('Configuration saved and repository initialized', 'success');
+    showToast('Configuration saved', 'success');
     inputToken.value = '';
   } else {
     showToast(initRes.error ?? 'Saved config but init failed', 'warning');

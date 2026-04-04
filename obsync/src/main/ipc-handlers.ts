@@ -82,6 +82,21 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.CLOUD_SAVE_CONFIG, async (_event, vaultId: string, credentials: CloudCredentials) => {
     try {
+      // '__keep_existing__' means update meta only, preserve the existing encrypted token
+      if (credentials.token === '__keep_existing__') {
+        const existing = cloudProvider.getConfig(vaultId);
+        if (existing) {
+          const appConfig = storageService.load();
+          storageService.update({
+            cloudConfigs: {
+              ...appConfig.cloudConfigs,
+              [vaultId]: { ...existing, provider: credentials.provider, meta: credentials.meta },
+            },
+          });
+          return reply(true);
+        }
+        return reply(false, undefined, 'No existing config to update');
+      }
       cloudProvider.saveConfig(vaultId, credentials);
       return reply(true);
     } catch (err) {
@@ -92,9 +107,9 @@ export function registerIpcHandlers(
   ipcMain.handle(IPC.CLOUD_GET_CONFIG, async (_event, vaultId: string) => {
     const config = cloudProvider.getConfig(vaultId);
     if (!config) return reply(false, undefined, 'No config found');
-    return reply(true, { 
-      provider: config.provider, 
-      meta: config.meta
+    return reply(true, {
+      provider: config.provider,
+      meta: config.meta,  // includes cloudVaultName if set
     });
   });
 
@@ -109,6 +124,21 @@ export function registerIpcHandlers(
       return reply(true, token);
     } catch (err) {
       return reply(false, undefined, err instanceof Error ? err.message : 'Sign in failed');
+    }
+  });
+
+  ipcMain.handle(IPC.CLOUD_LIST_VAULTS, async (_event, credentials: CloudCredentials) => {
+    try {
+      // List cloud vault folders (Obsync_*) for the given provider/credentials
+      const provider = (cloudProvider as any).providers[credentials.provider];
+      if (!provider) return reply(false, undefined, 'Unknown provider');
+      // Use a temp path — providers derive vault name from basename, so we pass root
+      // Each provider's pull() returns entries; we look for top-level Obsync_ folders
+      const result = await provider.listVaults?.(credentials);
+      if (result) return reply(true, result);
+      return reply(true, []); // provider doesn't support listing
+    } catch (err) {
+      return reply(false, undefined, err instanceof Error ? err.message : 'Failed to list vaults');
     }
   });
 

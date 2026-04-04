@@ -690,8 +690,19 @@ export class GitSyncService {
     const provider = this.getProvider(credentials);
     if (!provider) throw new Error(`No provider for ${credentials.provider}`);
 
+    // Ensure cloudVaultName is set in meta so the provider looks for the right folder.
+    // If not provided, default to the local folder name.
+    const credsWithName: CloudCredentials = {
+      ...credentials,
+      meta: {
+        ...credentials.meta,
+        cloudVaultName: (credentials.meta['cloudVaultName'] as string | undefined)?.trim()
+          || path.basename(targetPath),
+      },
+    };
+
     // Download all files from cloud into the target directory
-    const pullResult = await provider.pull(targetPath, credentials);
+    const pullResult = await provider.pull(targetPath, credsWithName);
     if (!pullResult.success) throw new Error(pullResult.message);
 
     // Initialize local git repo and commit the downloaded files

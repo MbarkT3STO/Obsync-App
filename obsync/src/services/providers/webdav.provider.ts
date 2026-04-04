@@ -6,6 +6,7 @@ import { PathUtils } from '../../utils/path.util';
 import { withRetry } from '../../utils/retry.util';
 import { shouldSkipDir, shouldSyncFile, collectVaultFiles } from '../../utils/obsidian-filter.util';
 import type { CloudCredentials, ICloudProvider, SyncResult } from '../../models/cloud-sync.model';
+import { getCloudVaultName } from '../../utils/vault-name.util';
 
 const logger = createLogger('WebDavCloudProvider');
 
@@ -30,7 +31,7 @@ export class WebDavCloudProvider implements ICloudProvider {
   async move(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const client = await this.getClient(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const remoteRoot = `Obsync_${vaultName}`;
       
       const oldPath = `${remoteRoot}/${oldRelativePath.replace(/\\/g, '/')}`;
@@ -60,7 +61,7 @@ export class WebDavCloudProvider implements ICloudProvider {
   async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const client = await this.getClient(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const remoteRoot = `/Obsync_${vaultName}`;
 
       const files = collectVaultFiles(vaultPath);
@@ -103,7 +104,7 @@ export class WebDavCloudProvider implements ICloudProvider {
   async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult & { entries?: any[] }> {
     try {
       const client = await this.getClient(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const remoteRoot = `Obsync_${vaultName}`;
 
       if (!(await client.exists(remoteRoot))) {
@@ -143,7 +144,7 @@ export class WebDavCloudProvider implements ICloudProvider {
   async pullFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const client = await this.getClient(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const remotePath = `/Obsync_${vaultName}/${PathUtils.normalize(relativePath)}`;
       
       const content = await client.getFileContents(remotePath);
@@ -161,7 +162,7 @@ export class WebDavCloudProvider implements ICloudProvider {
   async pushFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const client = await this.getClient(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const remotePath = `/Obsync_${vaultName}/${PathUtils.normalize(relativePath)}`;
       const localPath = path.join(vaultPath, relativePath);
       
@@ -179,7 +180,7 @@ export class WebDavCloudProvider implements ICloudProvider {
   async delete(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const client = await this.getClient(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const remotePath = `/Obsync_${vaultName}/${PathUtils.normalize(relativePath)}`;
       
       if (await client.exists(remotePath)) {

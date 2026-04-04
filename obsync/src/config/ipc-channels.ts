@@ -12,6 +12,7 @@ export const IPC = {
   CLOUD_GET_CONFIG: 'cloud:get-config',
   CLOUD_VALIDATE: 'cloud:validate',
   CLOUD_SIGN_IN: 'cloud:sign-in',
+  CLOUD_LIST_VAULTS: 'cloud:list-vaults',
 
   // Sync
   SYNC_PUSH: 'sync:push',

@@ -6,6 +6,7 @@ import { PathUtils } from '../../utils/path.util';
 import { withRetry } from '../../utils/retry.util';
 import { shouldSkipDir, shouldSyncFile, collectVaultFiles } from '../../utils/obsidian-filter.util';
 import type { CloudCredentials, ICloudProvider, SyncResult } from '../../models/cloud-sync.model';
+import { getCloudVaultName } from '../../utils/vault-name.util';
 
 const logger = createLogger('OneDriveCloudProvider');
 
@@ -23,7 +24,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
   async delete(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
       const onedrivePath = `${rootPath}/${relativePath.replace(/\\/g, '/')}`;
       const encodedPath = encodeURIComponent(onedrivePath);
@@ -42,7 +43,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
   async getChanges(vaultPath: string, credentials: CloudCredentials, cursor?: string): Promise<SyncResult & { cursor?: string; entries?: any[] }> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
 
       // Validate cursor — must be a full HTTPS URL (OneDrive deltaLink).
@@ -123,7 +124,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
   async pullFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
       const onedrivePath = `${rootPath}/${relativePath.replace(/\\/g, '/')}`;
       const encodedPath = encodeURIComponent(onedrivePath);
@@ -147,7 +148,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
   async move(vaultPath: string, oldRelativePath: string, newRelativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
       const oldPath = `${rootPath}/${oldRelativePath.replace(/\\/g, '/')}`;
       const newPath = `${rootPath}/${newRelativePath.replace(/\\/g, '/')}`;
@@ -186,7 +187,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
   async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
 
       const files = collectVaultFiles(vaultPath);
@@ -259,7 +260,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
   async pushFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
       const onedrivePath = `${rootPath}/${relativePath.replace(/\\/g, '/')}`;
       const fullPath = path.join(vaultPath, relativePath);
@@ -276,7 +277,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
   async pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult & { entries?: any[] }> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
 
       const entries: any[] = [];

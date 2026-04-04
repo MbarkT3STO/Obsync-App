@@ -5,6 +5,7 @@ import { createLogger } from '../../utils/logger.util';
 import { withRetry } from '../../utils/retry.util';
 import { shouldSkipDir, shouldSyncFile, collectVaultFiles } from '../../utils/obsidian-filter.util';
 import type { CloudCredentials, ICloudProvider, SyncResult } from '../../models/cloud-sync.model';
+import { getCloudVaultName } from '../../utils/vault-name.util';
 
 const logger = createLogger('GoogleDriveCloudProvider');
 
@@ -18,7 +19,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
   async getChanges(vaultPath: string, credentials: CloudCredentials, cursor?: string): Promise<SyncResult & { cursor?: string; entries?: any[] }> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const cloudRoot = `Obsync_${vaultName}`;
 
       // Find the vault root folder ID
@@ -143,7 +144,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
       const token = await this.getValidToken(credentials);
       const parts = relativePath.replace(/\\/g, '/').split('/');
       const fileName = parts.pop()!;
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       
       const rootRes = await this.driveApiRequest('GET', `files?q=${encodeURIComponent(`name = 'Obsync_${vaultName}' and 'root' in parents`)}&fields=files(id)`, token);
       if (!rootRes.data.files?.length) return { success: false, message: 'Vault root not found' };
@@ -174,7 +175,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
       const token = await this.getValidToken(credentials);
       const parts = relativePath.replace(/\\/g, '/').split('/');
       const fileName = parts.pop()!;
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       
       // Find root folder
       const rootRes = await this.driveApiRequest('GET', `files?q=${encodeURIComponent(`name = 'Obsync_${vaultName}' and 'root' in parents`)}&fields=files(id)`, token);
@@ -230,7 +231,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
   async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootFolderId = await this.getOrCreateFolder('root', `Obsync_${vaultName}`, token);
 
       const files = collectVaultFiles(vaultPath);
@@ -300,7 +301,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
   async pushFile(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootFolderId = await this.getOrCreateFolder('root', `Obsync_${vaultName}`, token);
       
       const fullPath = path.join(vaultPath, relativePath);
@@ -332,7 +333,7 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
     try {
       const token = await this.getValidToken(credentials);
       logger.info(`Starting pull from Google Drive to ${vaultPath}`);
-      const vaultName = path.basename(vaultPath);
+      const vaultName = getCloudVaultName(vaultPath, credentials);
       const q = encodeURIComponent(`name = 'Obsync_${vaultName}' and 'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`);
       const rootRes = await this.driveApiRequest('GET', `files?q=${q}&fields=files(id)`, token);
       
