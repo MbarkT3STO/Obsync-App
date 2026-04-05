@@ -750,6 +750,93 @@ export class GitSyncService {
       } catch { /* skip */ }
     }
 
+    // ── Folder rename detection ────────────────────────────────────────────
+    // When a folder is renamed on the cloud, the cloud listing shows files
+    // under the new folder name but the old folder still exists locally.
+    // Without this step the pull would download all files under the new name
+    // AND leave the old folder intact (since the old files are "protected" by
+    // the recentlyPushed / mtime guards), resulting in two copies.
+    //
+    // Strategy: find local files that are absent from the cloud but whose
+    // filename+size matches a cloud file that is absent locally.  Group those
+    // matches by their top-level directory prefix — if every file in an old
+    // local directory maps 1-to-1 onto a new cloud directory, treat it as a
+    // folder rename and move the files locally instead of download+delete.
+    const renamedLocalPaths = new Set<string>(); // old paths handled by rename
+    const renamedCloudPaths = new Set<string>();  // new paths handled by rename
+
+    // Files only on cloud (candidates for "new path after rename")
+    const cloudOnly = [...cloudFiles.keys()].filter(p => !localFiles.has(p));
+    // Files only local (candidates for "old path before rename")
+    const localOnly = [...localFiles.keys()].filter(p => !cloudFiles.has(p));
+
+    if (cloudOnly.length > 0 && localOnly.length > 0) {
+      // Build lookup: "filename:size" → [cloudRelPath, ...]
+      const cloudOnlyByKey = new Map<string, string[]>();
+      for (const cp of cloudOnly) {
+        const key = `${path.basename(cp)}:${cloudFiles.get(cp)!.size}`;
+        if (!cloudOnlyByKey.has(key)) cloudOnlyByKey.set(key, []);
+        cloudOnlyByKey.get(key)!.push(cp);
+      }
+
+      // For each local-only file find a unique cloud match
+      const localToCloud = new Map<string, string>(); // localRel → cloudRel
+      for (const lp of localOnly) {
+        const key = `${path.basename(lp)}:${localFiles.get(lp)!.size}`;
+        const candidates = cloudOnlyByKey.get(key);
+        if (candidates?.length === 1) {
+          localToCloud.set(lp, candidates[0]!);
+        }
+      }
+
+      // Group by old-dir → new-dir and check that ALL files in the old dir
+      // are accounted for (avoids false positives on coincidental name+size matches)
+      const dirPairs = new Map<string, { oldDir: string; newDir: string; files: Array<[string, string]> }>();
+      for (const [lp, cp] of localToCloud) {
+        const oldDir = lp.includes('/') ? lp.split('/')[0]! : '.';
+        const newDir = cp.includes('/') ? cp.split('/')[0]! : '.';
+        if (oldDir === newDir) continue; // same top-level dir — not a rename
+        const key = `${oldDir}→${newDir}`;
+        if (!dirPairs.has(key)) dirPairs.set(key, { oldDir, newDir, files: [] });
+        dirPairs.get(key)!.files.push([lp, cp]);
+      }
+
+      for (const { oldDir, newDir, files } of dirPairs.values()) {
+        // Verify every local file under oldDir is covered by this rename
+        const allLocalInOldDir = localOnly.filter(p => p === oldDir || p.startsWith(`${oldDir}/`));
+        if (files.length !== allLocalInOldDir.length) continue; // partial match — skip
+
+        logger.info(`Folder rename detected on cloud: "${oldDir}" → "${newDir}" (${files.length} file(s))`);
+
+        for (const [lp, cp] of files) {
+          const srcAbs = path.join(vaultPath, lp);
+          const dstAbs = path.join(vaultPath, cp);
+          try {
+            fs.mkdirSync(path.dirname(dstAbs), { recursive: true });
+            fs.renameSync(srcAbs, dstAbs);
+            logger.info(`  Renamed locally: ${lp} → ${cp}`);
+            renamedLocalPaths.add(lp);
+            renamedCloudPaths.add(cp);
+            // Update localFiles map so the rest of the logic sees the new state
+            const oldEntry = localFiles.get(lp);
+            localFiles.delete(lp);
+            localFiles.set(cp, { size: oldEntry?.size ?? cloudFiles.get(cp)!.size, mtime: Date.now() });
+          } catch (e) {
+            logger.warn(`  Failed to rename ${lp} → ${cp}:`, e);
+          }
+        }
+
+        // Remove the now-empty old directory
+        const oldDirAbs = path.join(vaultPath, oldDir);
+        try {
+          if (fs.existsSync(oldDirAbs) && fs.readdirSync(oldDirAbs).length === 0) {
+            fs.rmdirSync(oldDirAbs);
+            logger.info(`  Removed empty old directory: ${oldDir}`);
+          }
+        } catch { /* skip */ }
+      }
+    }
+
     let downloaded = 0;
     let deleted = 0;
     const failed: string[] = [];
@@ -762,6 +849,8 @@ export class GitSyncService {
     const now = Date.now();
     const toDownload: string[] = [];
     for (const [relPath, cloud] of cloudFiles) {
+      // Skip files already handled by folder rename
+      if (renamedCloudPaths.has(relPath)) continue;
       // Skip files we just uploaded — their cloud lastmod will be newer than
       // local mtime (server receipt time), which would cause a spurious re-download
       const pushedAt = this.recentlyPushed.get(`${vaultId}:${relPath}`);
@@ -817,6 +906,9 @@ export class GitSyncService {
     } else {
       for (const [relPath, local] of localFiles) {
         if (!cloudFiles.has(relPath)) {
+          // Skip files already moved by folder rename detection above
+          if (renamedLocalPaths.has(relPath)) continue;
+
           // Never delete a file we recently pushed — it may not yet appear in
           // the cloud listing (propagation delay) or the TTL window is still open.
           const pushedAt = this.recentlyPushed.get(`${vaultId}:${relPath}`);
