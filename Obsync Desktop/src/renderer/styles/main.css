@@ -2491,3 +2491,258 @@ body::before {
 [title] {
   position: relative;
 }
+
+/* ── About section row in Settings ──────────────────────────────────────── */
+.about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.about-row-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.about-row-logo {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.about-row-name {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.about-row-version {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* ── About Modal ─────────────────────────────────────────────────────────── */
+.about-modal {
+  max-width: 420px;
+  padding: 0;
+  overflow: hidden;
+  border-radius: var(--radius-xl);
+  position: relative;
+}
+
+/* Remove the default top gradient bar — we have our own hero */
+.about-modal::before { display: none; }
+
+.about-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 10;
+  background: rgba(255,255,255,.06) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+  width: 30px !important;
+  height: 30px !important;
+}
+.about-close:hover {
+  background: rgba(255,255,255,.12) !important;
+}
+
+/* ── Hero section ── */
+.about-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 32px 32px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+
+.about-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(60px);
+}
+.about-orb-1 {
+  width: 280px; height: 280px;
+  background: #7c6af7;
+  top: -120px; left: -80px;
+  opacity: .18;
+}
+.about-orb-2 {
+  width: 200px; height: 200px;
+  background: #e879a0;
+  bottom: -80px; right: -60px;
+  opacity: .14;
+}
+
+.about-logo-wrap {
+  position: relative;
+  margin-bottom: 16px;
+}
+.about-logo {
+  width: 72px;
+  height: 72px;
+  border-radius: 18px;
+  border: 1px solid var(--border-highlight);
+  box-shadow: 0 8px 32px rgba(124,106,247,.3);
+  position: relative;
+  z-index: 1;
+  display: block;
+}
+.about-logo-glow {
+  position: absolute;
+  inset: -8px;
+  border-radius: 26px;
+  background: radial-gradient(circle, rgba(124,106,247,.35) 0%, transparent 70%);
+  animation: about-pulse 3s ease-in-out infinite;
+  z-index: 0;
+}
+@keyframes about-pulse {
+  0%, 100% { opacity: .6; transform: scale(1); }
+  50%       { opacity: 1;  transform: scale(1.08); }
+}
+
+.about-app-name {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.about-version-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #9d8fff;
+  background: rgba(124,106,247,.14);
+  border: 1px solid rgba(124,106,247,.28);
+  border-radius: 100px;
+  padding: 3px 12px;
+  margin-bottom: 10px;
+}
+
+.about-tagline {
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* ── Stats strip ── */
+.about-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.about-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.about-stat-num {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -.02em;
+  background: linear-gradient(135deg, #9d8fff, #e879a0);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.about-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  text-align: center;
+}
+.about-stat-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Tech stack pills ── */
+.about-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  padding: 20px 32px 0;
+}
+.about-pill {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 4px 12px;
+  transition: border-color var(--transition), color var(--transition);
+}
+.about-pill:hover {
+  border-color: rgba(124,106,247,.4);
+  color: #9d8fff;
+}
+
+/* ── Links ── */
+.about-links {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  padding: 20px 32px 0;
+}
+.about-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 9px 18px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, #7c6af7, #5b4de0);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: opacity .2s, transform .2s;
+  box-shadow: 0 4px 16px rgba(124,106,247,.3);
+  text-decoration: none;
+}
+.about-link:hover { opacity: .88; transform: translateY(-1px); }
+.about-link svg { width: 15px; height: 15px; }
+
+.about-link-secondary {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+.about-link-secondary:hover {
+  border-color: rgba(124,106,247,.4);
+  background: var(--bg-hover);
+}
+
+/* ── Footer note ── */
+.about-footer-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 16px 32px 24px;
+  margin: 0;
+}

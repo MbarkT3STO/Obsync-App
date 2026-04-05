@@ -132,6 +132,11 @@ const btnHealthClose  = $<HTMLButtonElement>('btn-health-close');
 const btnHealthRecheck = $<HTMLButtonElement>('btn-health-recheck');
 const btnHealthRepair = $<HTMLButtonElement>('btn-health-repair');
 
+// About modal
+const aboutModal      = $('about-modal');
+const btnOpenAbout    = $<HTMLButtonElement>('btn-open-about');
+const btnAboutClose   = $<HTMLButtonElement>('btn-about-close');
+
 // ── Confirm Dialog (replaces native confirm()) ────────────────────────────
 function showConfirm(message: string, onConfirm: () => void, confirmLabel = 'Confirm', danger = false): void {
   const existing = document.getElementById('confirm-overlay');
@@ -770,6 +775,19 @@ function registerEventListeners(): void {
   btnHealthRepair.addEventListener('click', handleRepairVault);
   healthModal.addEventListener('click', (e) => { if (e.target === healthModal) healthModal.classList.add('hidden'); });
 
+  // About modal
+  btnOpenAbout.addEventListener('click', () => aboutModal.classList.remove('hidden'));
+  btnAboutClose.addEventListener('click', () => aboutModal.classList.add('hidden'));
+  aboutModal.addEventListener('click', (e) => { if (e.target === aboutModal) aboutModal.classList.add('hidden'); });
+  document.getElementById('about-link-github')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.open('https://github.com/MbarkT3STO/Obsync-App', '_blank');
+  });
+  document.getElementById('about-link-website')?.addEventListener('click', (e) => {
+    e.preventDefault();
+    window.open('https://mbarkt3sto.github.io/obsync', '_blank');
+  });
+
   historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.add('hidden'); });
   diffModal.addEventListener('click', (e) => { if (e.target === diffModal) diffModal.classList.add('hidden'); });
 
@@ -919,7 +937,7 @@ function registerEventListeners(): void {
   document.addEventListener('keydown', (e) => {
     // Escape — close any open modal
     if (e.key === 'Escape') {
-      for (const modal of [conflictModal, historyModal, diffModal, versionsModal, importModal, healthModal]) {
+      for (const modal of [conflictModal, historyModal, diffModal, versionsModal, importModal, healthModal, aboutModal]) {
         if (!modal.classList.contains('hidden')) {
           modal.classList.add('hidden');
           return;
