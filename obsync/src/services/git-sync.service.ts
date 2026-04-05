@@ -755,7 +755,10 @@ export class GitSyncService {
     const failed: string[] = [];
 
     // ── Download: files on cloud that are new or newer than local ─────────
-    const RECENTLY_PUSHED_TTL = 30_000; // 30 seconds
+    // TTL must cover the full poll interval so a recently-pushed file is not
+    // deleted locally before the next poll confirms it exists on the cloud.
+    // Default poll is 120 s; use 10 min as a safe upper bound.
+    const RECENTLY_PUSHED_TTL = 600_000; // 10 minutes
     const now = Date.now();
     const toDownload: string[] = [];
     for (const [relPath, cloud] of cloudFiles) {
@@ -814,6 +817,14 @@ export class GitSyncService {
     } else {
       for (const [relPath, local] of localFiles) {
         if (!cloudFiles.has(relPath)) {
+          // Never delete a file we recently pushed — it may not yet appear in
+          // the cloud listing (propagation delay) or the TTL window is still open.
+          const pushedAt = this.recentlyPushed.get(`${vaultId}:${relPath}`);
+          if (pushedAt && now - pushedAt < RECENTLY_PUSHED_TTL) {
+            logger.info(`Skipping delete of recently pushed local file: ${relPath}`);
+            continue;
+          }
+
           // Only delete if the file hasn't been modified locally since the last
           // sync. A file modified very recently (within 10s) may be a new local
           // file that hasn't been pushed yet — don't delete it.
