@@ -9,6 +9,7 @@ const logger = createLogger('Tray');
 
 export class TrayManager {
   private tray: Tray | null = null;
+  private menuDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly vaultService: VaultService,
@@ -29,6 +30,12 @@ export class TrayManager {
   }
 
   updateMenu(): void {
+    // Debounce: if called rapidly (e.g. during a multi-file sync), only rebuild once
+    if (this.menuDebounceTimer) clearTimeout(this.menuDebounceTimer);
+    this.menuDebounceTimer = setTimeout(() => this._buildMenu(), 300);
+  }
+
+  private _buildMenu(): void {
     if (!this.tray) return;
 
     const vaults = this.vaultService.list();
@@ -95,6 +102,7 @@ export class TrayManager {
   }
 
   destroy(): void {
+    if (this.menuDebounceTimer) clearTimeout(this.menuDebounceTimer);
     this.tray?.destroy();
     this.tray = null;
   }

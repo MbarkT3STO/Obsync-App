@@ -62,6 +62,7 @@ function createWindow(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      backgroundThrottling: true, // throttle timers/animations when window is hidden
     },
   });
 
@@ -127,6 +128,10 @@ async function runStartupPull(win: BrowserWindow): Promise<void> {
 
 // ── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(() => {
+  // Hint to the OS that this is a background utility — reduces scheduling priority
+  // when the window is hidden, which lowers CPU/battery impact.
+  try { app.setAppUserModelId('com.obsync.app'); } catch { /* non-Windows */ }
+
   // Disable default menu
   Menu.setApplicationMenu(null);
 

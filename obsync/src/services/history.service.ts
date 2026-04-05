@@ -364,13 +364,38 @@ export class HistoryService {
 
   private lcs(a: string[], b: string[]): [number, number][] {
     const m = a.length, n = b.length;
-    if (m * n > 200000) return [];
-    const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    // Hard cap: skip LCS for very large files to avoid blocking the main thread
+    if (m * n > 200_000) return [];
+
+    // Memory-efficient two-row DP instead of full m×n matrix
+    let prev = new Int32Array(n + 1);
+    let curr = new Int32Array(n + 1);
+
     for (let i = 1; i <= m; i++) {
       for (let j = 1; j <= n; j++) {
-        dp[i]![j] = a[i - 1] === b[j - 1] ? dp[i - 1]![j - 1]! + 1 : Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
+        curr[j] = a[i - 1] === b[j - 1]
+          ? prev[j - 1]! + 1
+          : Math.max(prev[j]!, curr[j - 1]!);
+      }
+      [prev, curr] = [curr, prev];
+      curr.fill(0);
+    }
+
+    // Backtrack using the final prev row — rebuild full table lazily
+    // For backtracking we need the full table; only build it if result is non-trivial
+    const lcsLen = prev[n]!;
+    if (lcsLen === 0) return [];
+
+    // Full table backtrack (only reached when lcsLen > 0 and m*n <= 200k)
+    const dp: Int32Array[] = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i]![j] = a[i - 1] === b[j - 1]
+          ? dp[i - 1]![j - 1]! + 1
+          : Math.max(dp[i - 1]![j]!, dp[i]![j - 1]!);
       }
     }
+
     const result: [number, number][] = [];
     let i = m, j = n;
     while (i > 0 && j > 0) {

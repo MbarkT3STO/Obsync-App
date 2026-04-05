@@ -77,13 +77,29 @@ export class GitSyncService {
   // Tracks paths uploaded recently so cloudFilePull won't re-download them.
   // Keyed as "vaultId:relPath" to avoid cross-vault collisions.
   private recentlyPushed = new Map<string, number>(); // "vaultId:relPath" → timestamp
+  // Cached machine ID — computed once, never re-read from disk
+  private cachedMachineId: string | null = null;
+  // Periodic cleanup timer for recentlyPushed map
+  private recentlyPushedCleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  private static readonly RECENTLY_PUSHED_TTL = 600_000; // 10 minutes
 
   constructor(
     private readonly vaultService: VaultService,
     private readonly cloudProvider: CloudProviderService,
     private readonly historyService: HistoryService,
     private readonly storageService: StorageService,
-  ) {}
+  ) {
+    // Evict stale recentlyPushed entries every 5 minutes regardless of sync activity
+    this.recentlyPushedCleanupTimer = setInterval(() => {
+      const cutoff = Date.now() - GitSyncService.RECENTLY_PUSHED_TTL;
+      for (const [k, t] of this.recentlyPushed) {
+        if (t < cutoff) this.recentlyPushed.delete(k);
+      }
+    }, 5 * 60 * 1000);
+    // Don't keep the process alive just for cleanup
+    this.recentlyPushedCleanupTimer.unref?.();
+  }
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -504,11 +520,20 @@ export class GitSyncService {
     if (entry.pollInterval) clearInterval(entry.pollInterval);
     entry.watcher?.close().catch(() => {});
     this.watchers.delete(vaultId);
+    // Evict this vault's entries from recentlyPushed to free memory
+    const prefix = `${vaultId}:`;
+    for (const k of this.recentlyPushed.keys()) {
+      if (k.startsWith(prefix)) this.recentlyPushed.delete(k);
+    }
     logger.info(`Stopped auto-sync for vault ${vaultId}`);
   }
 
   stopAll(): void {
     for (const id of Array.from(this.watchers.keys())) this.stopWatcher(id);
+    if (this.recentlyPushedCleanupTimer) {
+      clearInterval(this.recentlyPushedCleanupTimer);
+      this.recentlyPushedCleanupTimer = null;
+    }
   }
 
   restoreAll(window: BrowserWindow): void {
@@ -669,11 +694,15 @@ export class GitSyncService {
   private static readonly LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
   private getMachineId(): string {
-    // Use a stable per-machine identifier stored in app config
+    if (this.cachedMachineId) return this.cachedMachineId;
     const cfg = this.storageService.load();
-    if ((cfg as any).machineId) return (cfg as any).machineId;
+    if ((cfg as any).machineId) {
+      this.cachedMachineId = (cfg as any).machineId;
+      return this.cachedMachineId!;
+    }
     const id = require('crypto').randomBytes(8).toString('hex');
     this.storageService.update({ ...(cfg as any), machineId: id } as any);
+    this.cachedMachineId = id;
     return id;
   }
 
@@ -1099,7 +1128,7 @@ export class GitSyncService {
     // TTL must cover the full poll interval so a recently-pushed file is not
     // deleted locally before the next poll confirms it exists on the cloud.
     // Default poll is 120 s; use 10 min as a safe upper bound.
-    const RECENTLY_PUSHED_TTL = 600_000; // 10 minutes
+    const RECENTLY_PUSHED_TTL = GitSyncService.RECENTLY_PUSHED_TTL;
     const now = Date.now();
     const toDownload: string[] = [];
     for (const [relPath, cloud] of cloudFiles) {

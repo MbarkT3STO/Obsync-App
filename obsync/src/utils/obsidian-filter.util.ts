@@ -98,44 +98,51 @@ export function shouldSyncFile(relPath: string): boolean {
 }
 
 /**
- * Recursively collects all syncable files under vaultRoot.
- * Single implementation used by every provider — no duplication, no drift.
+ * Iteratively collects all syncable files under vaultRoot.
+ * Uses an explicit stack instead of recursion to avoid stack overflow
+ * on deeply nested vaults and reduce per-call overhead.
  *
- * @param vaultRoot  Absolute path to the vault root (used for relative-path calculation)
- * @param dirPath    Current directory being scanned (defaults to vaultRoot)
- * @param result     Accumulator (internal, do not pass)
+ * @param vaultRoot  Absolute path to the vault root
  */
 export function collectVaultFiles(
   vaultRoot: string,
-  dirPath: string = vaultRoot,
-  result: string[] = [],
+  _dirPath?: string,   // kept for API compatibility — ignored
+  _result?: string[],  // kept for API compatibility — ignored
 ): string[] {
-  if (!fs.existsSync(dirPath)) return result;
+  if (!fs.existsSync(vaultRoot)) return [];
 
-  let items: string[];
-  try {
-    items = fs.readdirSync(dirPath);
-  } catch {
-    return result; // unreadable directory — skip silently
-  }
+  const result: string[] = [];
+  // Stack entries: [absolutePath, vaultRelativeParentPath]
+  const stack: Array<[string, string]> = [[vaultRoot, '']];
 
-  for (const item of items) {
-    const fullPath = path.join(dirPath, item);
-    const relFromVault = path.relative(vaultRoot, fullPath).replace(/\\/g, '/');
+  while (stack.length > 0) {
+    const [dirPath, parentRel] = stack.pop()!;
 
-    let stat: fs.Stats;
+    let items: string[];
     try {
-      stat = fs.statSync(fullPath);
+      items = fs.readdirSync(dirPath);
     } catch {
-      continue; // locked / permission error / broken symlink — skip
+      continue; // unreadable — skip
     }
 
-    if (stat.isDirectory()) {
-      const parentRel = path.relative(vaultRoot, dirPath).replace(/\\/g, '/');
-      if (shouldSkipDir(item, parentRel)) continue;
-      collectVaultFiles(vaultRoot, fullPath, result);
-    } else {
-      if (shouldSyncFile(relFromVault)) result.push(fullPath);
+    for (const item of items) {
+      const fullPath = path.join(dirPath, item);
+      const relFromVault = parentRel ? `${parentRel}/${item}` : item;
+
+      let stat: fs.Stats;
+      try {
+        stat = fs.statSync(fullPath);
+      } catch {
+        continue; // locked / broken symlink — skip
+      }
+
+      if (stat.isDirectory()) {
+        if (!shouldSkipDir(item, parentRel)) {
+          stack.push([fullPath, relFromVault]);
+        }
+      } else {
+        if (shouldSyncFile(relFromVault)) result.push(fullPath);
+      }
     }
   }
 
