@@ -30,5 +30,6 @@ export interface DiffLine {
 
 export interface AutoSyncConfig {
   enabled: boolean;
-  debounceSeconds: number;  // default 30
+  debounceSeconds: number;  // how long to wait after last file change before pushing (default: 5)
+  pollSeconds: number;      // how often to check cloud for remote changes (default: 120)
 }

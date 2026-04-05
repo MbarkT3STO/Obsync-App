@@ -307,10 +307,10 @@ export class GitSyncService {
     const vault = this.vaultService.getById(vaultId);
     if (!vault) return;
 
-    const debounceMs = (config.debounceSeconds ?? 30) * 1000;
-    const pollMs = Math.max(debounceMs, 60_000);
+    const debounceMs = (config.debounceSeconds ?? 5) * 1000;
+    const pollMs = Math.max((config.pollSeconds ?? 120) * 1000, 30_000);
 
-    logger.info(`Starting auto-sync for vault: ${vault.name} (debounce: ${config.debounceSeconds}s)`);
+    logger.info(`Starting auto-sync for vault: ${vault.name} (debounce: ${config.debounceSeconds ?? 5}s, poll: ${config.pollSeconds ?? 120}s)`);
 
     const entry: WatcherEntry = {
       watcher: null as any,
@@ -690,13 +690,14 @@ export class GitSyncService {
 
     this.emitStatus(window, vaultId, 'syncing', 'Uploading to cloud...');
 
-    // provider.push() uploads all local files and removes cloud orphans (cleanupRemote)
-    const pushResult = await withRetry<SyncResult>(() => provider.push(vaultPath, creds));
+    // Collect once — reuse for both the upload and the recentlyPushed cache
+    const localFiles = collectVaultFiles(vaultPath);
+    const pushResult = await withRetry<SyncResult>(() => provider.push(vaultPath, creds, false, localFiles));
 
     // Mark all local files as recently pushed so the next pull won't re-download them
     if (pushResult.success) {
       const now = Date.now();
-      for (const absPath of collectVaultFiles(vaultPath)) {
+      for (const absPath of localFiles) {
         const rel = path.relative(vaultPath, absPath).replace(/\\/g, '/');
         this.recentlyPushed.set(`${vaultId}:${rel}`, now);
       }
@@ -811,22 +812,66 @@ export class GitSyncService {
     if (cloudFiles.size === 0 && localFiles.size > 0) {
       logger.warn('Cloud returned 0 files but vault has local files — skipping delete pass to avoid data loss');
     } else {
-      for (const [relPath] of localFiles) {
+      for (const [relPath, local] of localFiles) {
         if (!cloudFiles.has(relPath)) {
-          try {
-            const tracked = await git.raw(['ls-files', '--error-unmatch', relPath])
-              .then(() => true)
-              .catch(() => false);
+          // Only delete if the file hasn't been modified locally since the last
+          // sync. A file modified very recently (within 10s) may be a new local
+          // file that hasn't been pushed yet — don't delete it.
+          const ageMs = now - local.mtime;
+          if (ageMs < 10_000) {
+            logger.info(`Skipping delete of recently modified local file: ${relPath}`);
+            continue;
+          }
 
-            if (tracked) {
-              const absPath = path.join(vaultPath, relPath);
-              await this.historyService.archiveFile(vaultPath, relPath);
-              fs.rmSync(absPath, { force: true });
-              deleted++;
-              logger.info(`Deleted locally (removed from cloud): ${relPath}`);
-            }
+          try {
+            const absPath = path.join(vaultPath, relPath);
+            await this.historyService.archiveFile(vaultPath, relPath);
+            fs.rmSync(absPath, { force: true });
+            deleted++;
+            logger.info(`Deleted locally (removed from cloud): ${relPath}`);
           } catch { /* skip */ }
         }
+      }
+
+      // ── Remove empty directories left behind by file deletions ────────
+      const cloudDirs = new Set<string>();
+      for (const [relPath] of cloudFiles) {
+        let dir = path.dirname(relPath).replace(/\\/g, '/');
+        while (dir && dir !== '.') {
+          cloudDirs.add(dir);
+          dir = path.dirname(dir).replace(/\\/g, '/');
+        }
+      }
+
+      const localDirs: string[] = [];
+      const scanDirs = (dirPath: string, relBase: string) => {
+        try {
+          for (const entry of fs.readdirSync(dirPath)) {
+            const full = path.join(dirPath, entry);
+            const rel = relBase ? `${relBase}/${entry}` : entry;
+            try {
+              if (fs.statSync(full).isDirectory() && !rel.startsWith('.git') && !rel.startsWith('.obsync')) {
+                localDirs.push(rel);
+                scanDirs(full, rel);
+              }
+            } catch { /* skip */ }
+          }
+        } catch { /* skip */ }
+      };
+      scanDirs(vaultPath, '');
+
+      // Deepest first so nested empty dirs are removed before their parents
+      localDirs.sort((a, b) => b.split('/').length - a.split('/').length);
+
+      for (const relDir of localDirs) {
+        if (cloudDirs.has(relDir)) continue;
+        const absDir = path.join(vaultPath, relDir);
+        try {
+          if (fs.readdirSync(absDir).length === 0) {
+            fs.rmdirSync(absDir);
+            logger.info(`Removed empty directory: ${relDir}`);
+          }
+        } catch { /* skip */ }
       }
     }
 

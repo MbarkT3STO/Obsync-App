@@ -191,13 +191,13 @@ export class OneDriveCloudProvider implements ICloudProvider {
     }
   }
 
-  async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
+  async push(vaultPath: string, credentials: CloudCredentials, skipCleanup = false, localFiles?: string[]): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
       const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootPath = `Obsync_${vaultName}`;
 
-      const files = collectVaultFiles(vaultPath);
+      const files = localFiles ?? collectVaultFiles(vaultPath);
       let pushed = 0;
       const failed: string[] = [];
 
@@ -214,7 +214,7 @@ export class OneDriveCloudProvider implements ICloudProvider {
         }
       }
 
-      if (files.length > 0) {
+      if (!skipCleanup && files.length > 0) {
         await this.cleanupRemote(rootPath, vaultPath, token, files);
       }
 

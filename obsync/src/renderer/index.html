@@ -231,10 +231,17 @@
             </label>
           </div>
           <div class="autosync-options hidden" id="autosync-options">
-            <div class="form-group" style="margin-top:14px;margin-bottom:0">
-              <label for="autosync-debounce">Debounce delay (seconds)</label>
-              <input type="number" id="autosync-debounce" min="5" max="300" value="30" style="max-width:120px" />
-              <span class="field-hint">Wait this long after the last file change before pushing.</span>
+            <div class="form-grid" style="margin-top:14px;margin-bottom:0">
+              <div class="form-group" style="margin-bottom:0">
+                <label for="autosync-debounce">Debounce delay (seconds)</label>
+                <input type="number" id="autosync-debounce" min="2" max="60" value="5" style="max-width:120px" />
+                <span class="field-hint">Wait this long after the last file change before uploading.</span>
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label for="autosync-poll">Remote poll interval (seconds)</label>
+                <input type="number" id="autosync-poll" min="30" max="3600" value="120" style="max-width:120px" />
+                <span class="field-hint">How often to check the cloud for changes from other devices.</span>
+              </div>
             </div>
           </div>
         </section>
@@ -470,16 +477,31 @@
 
 <!-- Conflict Modal -->
 <div class="modal-overlay hidden" id="conflict-modal" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
-  <div class="modal modal-wide">
-    <h2 id="conflict-title">⚠ Sync Conflicts Detected</h2>
-    <p>The following files have changed both locally and in the cloud. Choose a resolution strategy:</p>
-    <div class="conflict-scrollbox" style="max-height: 300px; overflow-y: auto; margin: 15px 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px;">
+  <div class="modal modal-wide modal-tall">
+    <div class="modal-header">
+      <div>
+        <h2 id="conflict-title">⚠ Sync Conflicts Detected</h2>
+        <p style="color:var(--text-secondary);font-size:13px;margin-top:4px">The following files have changed both locally and in the cloud. Click a file to preview the diff, then choose a resolution strategy.</p>
+      </div>
+    </div>
+    <div class="conflict-scrollbox" style="max-height:200px;overflow-y:auto;margin:12px 0;border:1px solid var(--border);border-radius:8px;padding:8px">
       <ul class="conflict-list" id="conflict-list"></ul>
     </div>
-    <div class="modal-actions" style="justify-content: flex-end; gap: 10px;">
+    <div id="conflict-diff-preview" class="hidden" style="flex:1;display:flex;flex-direction:column;gap:8px;min-height:0;margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span class="diff-file-path" id="conflict-diff-path" style="font-size:12px"></span>
+        <button class="btn-icon" id="btn-conflict-diff-close" aria-label="Close preview" title="Close preview">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+      <div class="diff-viewer" id="conflict-diff-viewer" style="max-height:280px"></div>
+    </div>
+    <div class="modal-actions" style="justify-content:flex-end;gap:10px;flex-shrink:0">
       <button class="btn-secondary" id="btn-conflict-local">Keep Local</button>
       <button class="btn-secondary" id="btn-conflict-cloud">Keep Cloud</button>
-      <button class="btn-primary" id="btn-conflict-both">Keep Both (Safeest)</button>
+      <button class="btn-primary" id="btn-conflict-both">Keep Both (Safest)</button>
     </div>
   </div>
 </div>

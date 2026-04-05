@@ -32,7 +32,7 @@ export interface ConflictInfo {
 /** Unified interface for all Cloud Providers (Git and non-Git) */
 export interface ICloudProvider {
   validate(credentials: CloudCredentials): Promise<SyncResult>;
-  push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
+  push(vaultPath: string, credentials: CloudCredentials, skipCleanup?: boolean, localFiles?: string[]): Promise<SyncResult>;
   pushFile?(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult>;
   pull(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult>;
   pullFile?(vaultPath: string, relativePath: string, credentials: CloudCredentials): Promise<SyncResult>;

@@ -174,9 +174,79 @@ btnConflictBoth.addEventListener('click', () => handleConflictResolution('both')
 function showConflictModal(vaultId: string, conflicts: Array<{ filePath: string }>): void {
   currentConflicts = { vaultId, files: conflicts.map(c => c.filePath) };
   conflictList.innerHTML = '';
+
+  const diffPreview = document.getElementById('conflict-diff-preview')!;
+  const diffViewer  = document.getElementById('conflict-diff-viewer')!;
+  const diffPath    = document.getElementById('conflict-diff-path')!;
+  diffPreview.classList.add('hidden');
+
+  document.getElementById('btn-conflict-diff-close')?.addEventListener('click', () => {
+    diffPreview.classList.add('hidden');
+    diffPreview.style.display = '';
+  }, { once: false });
+
   for (const c of conflicts) {
     const li = document.createElement('li');
-    li.textContent = c.filePath;
+    li.style.cursor = 'pointer';
+    li.style.display = 'flex';
+    li.style.alignItems = 'center';
+    li.style.justifyContent = 'space-between';
+    li.style.gap = '8px';
+
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = c.filePath;
+    nameSpan.style.flex = '1';
+    nameSpan.style.overflow = 'hidden';
+    nameSpan.style.textOverflow = 'ellipsis';
+    nameSpan.style.whiteSpace = 'nowrap';
+
+    const previewBtn = document.createElement('button');
+    previewBtn.className = 'btn-secondary';
+    previewBtn.style.fontSize = '11px';
+    previewBtn.style.padding = '3px 8px';
+    previewBtn.style.flexShrink = '0';
+    previewBtn.textContent = 'View diff';
+
+    previewBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      previewBtn.textContent = 'Loading...';
+      previewBtn.disabled = true;
+
+      const res = await window.obsync.history.getFileDiff(vaultId, c.filePath);
+      previewBtn.textContent = 'View diff';
+      previewBtn.disabled = false;
+
+      if (res.success && res.data) {
+        diffPath.textContent = c.filePath;
+        diffViewer.innerHTML = '';
+        // Reuse the existing renderDiff logic inline
+        if (res.data.hunks.length === 0) {
+          diffViewer.innerHTML = '<div class="diff-empty">No differences found.</div>';
+        } else {
+          for (const hunk of res.data.hunks) {
+            const hunkHeader = document.createElement('div');
+            hunkHeader.className = hunk.header.startsWith('──') ? 'diff-file-header' : 'diff-hunk-header';
+            hunkHeader.textContent = hunk.header;
+            diffViewer.appendChild(hunkHeader);
+            for (const line of hunk.lines) {
+              const lineEl = document.createElement('div');
+              const isConflict = line.content.startsWith('<<<<<<<') || line.content.startsWith('=======') || line.content.startsWith('>>>>>>>');
+              lineEl.className = `diff-line ${line.type}${isConflict ? ' conflict-marker' : ''}`;
+              const prefix = line.type === 'added' ? '+' : line.type === 'removed' ? '-' : ' ';
+              lineEl.innerHTML = `<span class="diff-line-no">${line.lineNo ?? ''}</span><span class="diff-line-content">${prefix} ${escapeHtml(line.content)}</span>`;
+              diffViewer.appendChild(lineEl);
+            }
+          }
+        }
+        diffPreview.classList.remove('hidden');
+        diffPreview.style.display = 'flex';
+      } else {
+        showToast('Could not load diff for this file', 'warning');
+      }
+    });
+
+    li.appendChild(nameSpan);
+    li.appendChild(previewBtn);
     conflictList.appendChild(li);
   }
   conflictModal.classList.remove('hidden');
@@ -188,6 +258,7 @@ const themeLightBtn   = $<HTMLButtonElement>('theme-light');
 const autoSyncToggle   = $<HTMLInputElement>('autosync-toggle');
 const autoSyncOptions  = $('autosync-options');
 const autoSyncDebounce = $<HTMLInputElement>('autosync-debounce');
+const autoSyncPoll     = $<HTMLInputElement>('autosync-poll');
 
 // Config labels
 const labelRepoUrl  = $('label-repo-url');
@@ -675,6 +746,7 @@ function registerEventListeners(): void {
 
   autoSyncToggle.addEventListener('change', handleAutoSyncToggle);
   autoSyncDebounce.addEventListener('change', handleAutoSyncDebounceChange);
+  autoSyncPoll.addEventListener('change', handleAutoSyncDebounceChange);
 
   btnShowHistory.addEventListener('click', handleShowHistory);
   btnHistoryClose.addEventListener('click', () => historyModal.classList.add('hidden'));
@@ -1121,7 +1193,8 @@ async function loadAutoSyncConfig(vaultId: string): Promise<void> {
   const res = await window.obsync.autoSync.get(vaultId);
   if (res.success && res.data) {
     autoSyncToggle.checked = res.data.enabled;
-    autoSyncDebounce.value = String(res.data.debounceSeconds ?? 30);
+    autoSyncDebounce.value = String(res.data.debounceSeconds ?? 5);
+    autoSyncPoll.value = String(res.data.pollSeconds ?? 120);
     autoSyncOptions.classList.toggle('hidden', !res.data.enabled);
   }
 }
@@ -1129,16 +1202,18 @@ async function loadAutoSyncConfig(vaultId: string): Promise<void> {
 async function handleAutoSyncToggle(): Promise<void> {
   if (!selectedVaultId) return;
   const enabled = autoSyncToggle.checked;
-  const debounceSeconds = parseInt(autoSyncDebounce.value, 10) || 30;
+  const debounceSeconds = parseInt(autoSyncDebounce.value, 10) || 5;
+  const pollSeconds = parseInt(autoSyncPoll.value, 10) || 120;
   autoSyncOptions.classList.toggle('hidden', !enabled);
-  await window.obsync.autoSync.set(selectedVaultId, { enabled, debounceSeconds });
-  showToast(enabled ? `Auto-sync enabled (${debounceSeconds}s debounce)` : 'Auto-sync disabled', 'info');
+  await window.obsync.autoSync.set(selectedVaultId, { enabled, debounceSeconds, pollSeconds });
+  showToast(enabled ? `Auto-sync enabled` : 'Auto-sync disabled', 'info');
 }
 
 async function handleAutoSyncDebounceChange(): Promise<void> {
   if (!selectedVaultId || !autoSyncToggle.checked) return;
-  const debounceSeconds = parseInt(autoSyncDebounce.value, 10) || 30;
-  await window.obsync.autoSync.set(selectedVaultId, { enabled: true, debounceSeconds });
+  const debounceSeconds = parseInt(autoSyncDebounce.value, 10) || 5;
+  const pollSeconds = parseInt(autoSyncPoll.value, 10) || 120;
+  await window.obsync.autoSync.set(selectedVaultId, { enabled: true, debounceSeconds, pollSeconds });
 }
 
 async function handleShowHistory(): Promise<void> {

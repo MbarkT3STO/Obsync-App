@@ -228,7 +228,7 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IPC.AUTOSYNC_GET, async (_event, vaultId: string) => {
     const config = gitSyncService.getAutoSyncConfig(vaultId);
-    return reply(true, config ?? { enabled: false, debounceSeconds: 30 });
+    return reply(true, config ?? { enabled: false, debounceSeconds: 5, pollSeconds: 120 });
   });
 
   // ── Settings ───────────────────────────────────────────────────────────────

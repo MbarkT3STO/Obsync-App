@@ -146,13 +146,13 @@ export class DropboxCloudProvider implements ICloudProvider {
     }
   }
 
-  async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
+  async push(vaultPath: string, credentials: CloudCredentials, skipCleanup = false, localFiles?: string[]): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
       const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootDir = `/Obsync_${vaultName}`;
 
-      const files = collectVaultFiles(vaultPath);
+      const files = localFiles ?? collectVaultFiles(vaultPath);
       let pushed = 0;
       const failed: string[] = [];
 
@@ -170,7 +170,9 @@ export class DropboxCloudProvider implements ICloudProvider {
         }
       }
 
-      await this.cleanupRemote(rootDir, vaultPath, token, files);
+      if (!skipCleanup) {
+        await this.cleanupRemote(rootDir, vaultPath, token, files);
+      }
 
       const msg = failed.length
         ? `Pushed ${pushed} file(s), ${failed.length} failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '...' : ''}`

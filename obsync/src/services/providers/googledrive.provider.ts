@@ -242,13 +242,13 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
     }
   }
 
-  async push(vaultPath: string, credentials: CloudCredentials): Promise<SyncResult> {
+  async push(vaultPath: string, credentials: CloudCredentials, skipCleanup = false, localFiles?: string[]): Promise<SyncResult> {
     try {
       const token = await this.getValidToken(credentials);
       const vaultName = getCloudVaultName(vaultPath, credentials);
       const rootFolderId = await this.getOrCreateFolder('root', `Obsync_${vaultName}`, token);
 
-      const files = collectVaultFiles(vaultPath);
+      const files = localFiles ?? collectVaultFiles(vaultPath);
       let pushed = 0;
       const failed: string[] = [];
 
@@ -267,7 +267,9 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
         }
       }
 
-      await this.cleanupRemote(rootFolderId, vaultPath, token, files);
+      if (!skipCleanup) {
+        await this.cleanupRemote(rootFolderId, vaultPath, token, files);
+      }
 
       const msg = failed.length
         ? `Pushed ${pushed} file(s), ${failed.length} failed: ${failed.slice(0, 3).join(', ')}${failed.length > 3 ? '...' : ''}`
