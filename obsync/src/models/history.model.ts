@@ -33,3 +33,23 @@ export interface AutoSyncConfig {
   debounceSeconds: number;  // how long to wait after last file change before pushing (default: 5)
   pollSeconds: number;      // how often to check cloud for remote changes (default: 120)
 }
+
+export interface HealthCheckResult {
+  vaultId: string;
+  healthy: boolean;
+  issues: HealthIssue[];
+  repairable: boolean;
+}
+
+export interface HealthIssue {
+  code: 'git_corrupt' | 'remote_unreachable' | 'no_remote' | 'uncommitted_changes' | 'detached_head' | 'no_config';
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+export interface SyncLockInfo {
+  machineId: string;
+  hostname: string;
+  acquiredAt: string;   // ISO string
+  expiresAt: string;    // ISO string — locks auto-expire after 5 min
+}

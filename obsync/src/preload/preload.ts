@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('obsync', {
     list: () => ipcRenderer.invoke(IPC.VAULT_LIST),
     clone: (targetPath: string, credentials: CloudCredentials) =>
       ipcRenderer.invoke(IPC.VAULT_CLONE, targetPath, credentials),
+    healthCheck: (vaultId: string) => ipcRenderer.invoke(IPC.VAULT_HEALTH_CHECK, vaultId),
+    repair: (vaultId: string) => ipcRenderer.invoke(IPC.VAULT_REPAIR, vaultId),
   },
   cloud: {
     saveConfig: (vaultId: string, credentials: CloudCredentials) =>
@@ -29,6 +31,9 @@ contextBridge.exposeInMainWorld('obsync', {
     getStatus: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_STATUS, vaultId),
     resolveConflict: (vaultId: string, filePath: string, strategy: 'local' | 'cloud' | 'both') =>
       ipcRenderer.invoke(IPC.SYNC_RESOLVE, vaultId, filePath, strategy),
+    acquireLock: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_ACQUIRE_LOCK, vaultId),
+    releaseLock: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_RELEASE_LOCK, vaultId),
+    checkLock: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_CHECK_LOCK, vaultId),
   },
   history: {
     getCommits: (vaultId: string, limit?: number) => ipcRenderer.invoke(IPC.HISTORY_GET, vaultId, limit),

@@ -128,6 +128,18 @@ export class GitSyncService {
     this.emitStatus(window, vaultId, 'syncing', 'Committing changes...');
 
     try {
+      // ── Acquire sync lock (non-Git providers only) ─────────────────────
+      this.emitStatus(window, vaultId, 'syncing', 'Checking sync lock...');
+      const lockResult = await this.acquireSyncLock(vaultId);
+      if (!lockResult.acquired) {
+        const info = lockResult.lockInfo!;
+        const msg2 = `Vault is being synced by another device (${info.hostname}). Try again in a moment.`;
+        this.emitStatus(window, vaultId, 'error', msg2);
+        if (!silent) this.emitComplete(window, vaultId, err(msg2));
+        this.syncingVaults.delete(vaultId);
+        return err(msg2);
+      }
+
       const git = this.git(vault.localPath);
       await this.ensureGitRepo(git, vault.localPath);
 
@@ -174,6 +186,7 @@ export class GitSyncService {
       return err(message);
     } finally {
       this.syncingVaults.delete(vaultId);
+      await this.releaseSyncLock(vaultId).catch(() => {});
     }
   }
 
@@ -518,6 +531,247 @@ export class GitSyncService {
 
   isWatching(vaultId: string): boolean {
     return this.watchers.has(vaultId);
+  }
+
+  // ── Vault Health Check ─────────────────────────────────────────────────────
+
+  async healthCheck(vaultId: string): Promise<import('../models/history.model').HealthCheckResult> {
+    const vault = this.vaultService.getById(vaultId);
+    const issues: import('../models/history.model').HealthIssue[] = [];
+
+    if (!vault) {
+      return { vaultId, healthy: false, repairable: false, issues: [{ code: 'no_config', message: 'Vault not found', severity: 'error' }] };
+    }
+
+    const creds = this.cloudProvider.getCredentials(vaultId);
+    if (!creds) {
+      issues.push({ code: 'no_config', message: 'No cloud provider configured for this vault', severity: 'warning' });
+    }
+
+    const gitDir = path.join(vault.localPath, '.git');
+    if (!fs.existsSync(gitDir)) {
+      issues.push({ code: 'git_corrupt', message: 'Git repository not initialised (.git directory missing)', severity: 'error' });
+      return { vaultId, healthy: false, repairable: true, issues };
+    }
+
+    try {
+      const git = this.git(vault.localPath);
+
+      // Check for detached HEAD
+      try {
+        const head = await git.raw(['symbolic-ref', '--short', 'HEAD']);
+        if (!head.trim()) throw new Error('detached');
+      } catch {
+        issues.push({ code: 'detached_head', message: 'Git HEAD is detached — branch tracking may be broken', severity: 'warning' });
+      }
+
+      // Check for uncommitted changes
+      try {
+        const status = await git.status();
+        if (status.files.length > 0) {
+          issues.push({ code: 'uncommitted_changes', message: `${status.files.length} uncommitted change(s) in the working tree`, severity: 'warning' });
+        }
+      } catch {
+        issues.push({ code: 'git_corrupt', message: 'Could not read git status — repository may be corrupt', severity: 'error' });
+      }
+
+      // Check remote reachability (Git providers only)
+      if (creds && GIT_PROVIDERS.has(creds.provider)) {
+        const remotes = await git.getRemotes().catch(() => []);
+        if (!remotes.find(r => r.name === 'origin')) {
+          issues.push({ code: 'no_remote', message: 'No git remote "origin" configured', severity: 'error' });
+        } else {
+          try {
+            const authUrl = this.buildAuthUrl(creds.meta['repoUrl'], creds.token);
+            await git.raw(['ls-remote', '--exit-code', '--heads', authUrl]);
+          } catch (e) {
+            const m = String(e);
+            if (m.includes('Authentication') || m.includes('403') || m.includes('401')) {
+              issues.push({ code: 'remote_unreachable', message: 'Remote authentication failed — token may be expired or invalid', severity: 'error' });
+            } else if (m.includes('not found') || m.includes('404') || m.includes('Repository')) {
+              issues.push({ code: 'remote_unreachable', message: 'Remote repository not found — URL may be incorrect', severity: 'error' });
+            } else {
+              issues.push({ code: 'remote_unreachable', message: `Remote unreachable: ${m.slice(0, 120)}`, severity: 'error' });
+            }
+          }
+        }
+      } else if (creds && !GIT_PROVIDERS.has(creds.provider)) {
+        // Non-git: validate credentials via provider
+        try {
+          const result = await this.cloudProvider.validate(creds);
+          if (!result.success) {
+            issues.push({ code: 'remote_unreachable', message: `Cloud provider unreachable: ${result.message}`, severity: 'error' });
+          }
+        } catch (e) {
+          issues.push({ code: 'remote_unreachable', message: `Could not reach cloud provider: ${msg(e)}`, severity: 'error' });
+        }
+      }
+
+    } catch (e) {
+      issues.push({ code: 'git_corrupt', message: `Git repository appears corrupt: ${msg(e)}`, severity: 'error' });
+    }
+
+    const hasErrors = issues.some(i => i.severity === 'error');
+    const repairable = issues.some(i => i.code === 'git_corrupt' || i.code === 'no_remote' || i.code === 'detached_head');
+    return { vaultId, healthy: !hasErrors, repairable, issues };
+  }
+
+  async repairVault(vaultId: string): Promise<SyncResult> {
+    const vault = this.vaultService.getById(vaultId);
+    if (!vault) return err('Vault not found');
+    const creds = this.cloudProvider.getCredentials(vaultId);
+
+    try {
+      const git = this.git(vault.localPath);
+      await this.ensureGitRepo(git, vault.localPath);
+
+      // Re-attach HEAD if detached
+      try {
+        await git.raw(['symbolic-ref', '--short', 'HEAD']);
+      } catch {
+        const branch = creds?.meta['branch'] || 'main';
+        await git.checkout(['-B', branch]).catch(() => {});
+        logger.info(`[${vaultId}] Repair: re-attached HEAD to ${branch}`);
+      }
+
+      // Re-add remote if missing (Git providers)
+      if (creds && GIT_PROVIDERS.has(creds.provider)) {
+        const authUrl = this.buildAuthUrl(creds.meta['repoUrl'], creds.token);
+        const remotes = await git.getRemotes();
+        if (!remotes.find(r => r.name === 'origin')) {
+          await git.addRemote('origin', authUrl);
+          logger.info(`[${vaultId}] Repair: re-added remote origin`);
+        } else {
+          await git.remote(['set-url', 'origin', authUrl]);
+        }
+      }
+
+      // Stage and commit any loose changes
+      await git.add('.');
+      const status = await git.status();
+      if (status.files.length > 0) {
+        await git.commit('obsync: repair commit').catch(() => {});
+        logger.info(`[${vaultId}] Repair: committed ${status.files.length} loose file(s)`);
+      }
+
+      return ok('Vault repaired successfully');
+    } catch (e) {
+      return err(`Repair failed: ${msg(e)}`);
+    }
+  }
+
+  // ── Multi-device sync lock ─────────────────────────────────────────────────
+  // A lightweight JSON lock file is written to the cloud before any push.
+  // Other machines check for this file and abort their push if the lock is held.
+  // Locks auto-expire after LOCK_TTL_MS to prevent permanent deadlocks.
+
+  private static readonly LOCK_FILE = '.obsync/sync.lock';
+  private static readonly LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+  private getMachineId(): string {
+    // Use a stable per-machine identifier stored in app config
+    const cfg = this.storageService.load();
+    if ((cfg as any).machineId) return (cfg as any).machineId;
+    const id = require('crypto').randomBytes(8).toString('hex');
+    this.storageService.update({ ...(cfg as any), machineId: id } as any);
+    return id;
+  }
+
+  async acquireSyncLock(vaultId: string): Promise<{ acquired: boolean; lockInfo?: import('../models/history.model').SyncLockInfo }> {
+    const vault = this.vaultService.getById(vaultId);
+    if (!vault) return { acquired: false };
+    const creds = this.cloudProvider.getCredentials(vaultId);
+    if (!creds) return { acquired: true }; // no cloud config — no lock needed
+
+    // Git providers: lock is not needed (git itself serialises pushes via fast-forward rejection)
+    if (GIT_PROVIDERS.has(creds.provider)) return { acquired: true };
+
+    const provider = this.getProvider(creds);
+    if (!provider?.pushFile || !provider?.pullFile) return { acquired: true };
+
+    this.wireTokenRefresh(provider, vaultId);
+
+    // Try to read existing lock
+    const lockPath = path.join(vault.localPath, GitSyncService.LOCK_FILE);
+    const lockDir = path.dirname(lockPath);
+    if (!fs.existsSync(lockDir)) fs.mkdirSync(lockDir, { recursive: true });
+
+    try {
+      const res = await provider.pullFile(vault.localPath, GitSyncService.LOCK_FILE, creds);
+      if (res.success && fs.existsSync(lockPath)) {
+        const raw = fs.readFileSync(lockPath, 'utf-8');
+        const existing: import('../models/history.model').SyncLockInfo = JSON.parse(raw);
+        const expired = Date.now() > new Date(existing.expiresAt).getTime();
+        if (!expired && existing.machineId !== this.getMachineId()) {
+          return { acquired: false, lockInfo: existing };
+        }
+      }
+    } catch { /* no lock file on cloud — proceed */ }
+
+    // Write our lock
+    const os = require('os');
+    const lockInfo: import('../models/history.model').SyncLockInfo = {
+      machineId: this.getMachineId(),
+      hostname: os.hostname(),
+      acquiredAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + GitSyncService.LOCK_TTL_MS).toISOString(),
+    };
+    fs.writeFileSync(lockPath, JSON.stringify(lockInfo, null, 2), 'utf-8');
+
+    try {
+      await provider.pushFile(vault.localPath, GitSyncService.LOCK_FILE, creds);
+      logger.info(`[${vaultId}] Sync lock acquired by ${lockInfo.hostname}`);
+    } catch (e) {
+      logger.warn(`[${vaultId}] Could not upload sync lock: ${msg(e)}`);
+    }
+
+    return { acquired: true };
+  }
+
+  async releaseSyncLock(vaultId: string): Promise<void> {
+    const vault = this.vaultService.getById(vaultId);
+    if (!vault) return;
+    const creds = this.cloudProvider.getCredentials(vaultId);
+    if (!creds || GIT_PROVIDERS.has(creds.provider)) return;
+
+    const provider = this.getProvider(creds);
+    if (!provider?.delete) return;
+    this.wireTokenRefresh(provider, vaultId);
+
+    try {
+      await provider.delete(vault.localPath, GitSyncService.LOCK_FILE, creds);
+      logger.info(`[${vaultId}] Sync lock released`);
+    } catch { /* best-effort */ }
+
+    // Clean up local lock file
+    const lockPath = path.join(vault.localPath, GitSyncService.LOCK_FILE);
+    try { fs.rmSync(lockPath, { force: true }); } catch { /* ignore */ }
+  }
+
+  async checkSyncLock(vaultId: string): Promise<import('../models/history.model').SyncLockInfo | null> {
+    const vault = this.vaultService.getById(vaultId);
+    if (!vault) return null;
+    const creds = this.cloudProvider.getCredentials(vaultId);
+    if (!creds || GIT_PROVIDERS.has(creds.provider)) return null;
+
+    const provider = this.getProvider(creds);
+    if (!provider?.pullFile) return null;
+    this.wireTokenRefresh(provider, vaultId);
+
+    const lockPath = path.join(vault.localPath, GitSyncService.LOCK_FILE);
+    const lockDir = path.dirname(lockPath);
+    if (!fs.existsSync(lockDir)) fs.mkdirSync(lockDir, { recursive: true });
+
+    try {
+      const res = await provider.pullFile(vault.localPath, GitSyncService.LOCK_FILE, creds);
+      if (res.success && fs.existsSync(lockPath)) {
+        const raw = fs.readFileSync(lockPath, 'utf-8');
+        const info: import('../models/history.model').SyncLockInfo = JSON.parse(raw);
+        const expired = Date.now() > new Date(info.expiresAt).getTime();
+        return expired ? null : info;
+      }
+    } catch { /* no lock */ }
+    return null;
   }
 
   // ── Git helpers ────────────────────────────────────────────────────────────

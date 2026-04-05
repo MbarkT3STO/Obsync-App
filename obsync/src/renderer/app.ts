@@ -5,7 +5,7 @@
 
 import type { Vault, VaultSyncStatus } from '../models/vault.model';
 import type { IpcResponse, AppSettings } from '../models/app-state.model';
-import type { CommitEntry, FileDiff, AutoSyncConfig } from '../models/history.model';
+import type { CommitEntry, FileDiff, AutoSyncConfig, HealthCheckResult, SyncLockInfo } from '../models/history.model';
 import type { CloudCredentials, SyncProviderType } from '../models/cloud-sync.model';
 
 // ── Type augmentation for the contextBridge API ────────────────────────────
@@ -22,6 +22,8 @@ interface ObsyncAPI {
     remove(id: string): Promise<IpcResponse<void>>;
     list(): Promise<IpcResponse<Vault[]>>;
     clone(targetPath: string, credentials: CloudCredentials): Promise<IpcResponse<Vault>>;
+    healthCheck(vaultId: string): Promise<IpcResponse<HealthCheckResult>>;
+    repair(vaultId: string): Promise<IpcResponse<{ message: string }>>;
   };
   cloud: {
     saveConfig(vaultId: string, creds: CloudCredentials): Promise<IpcResponse<void>>;
@@ -37,6 +39,9 @@ interface ObsyncAPI {
     pullAll(): Promise<IpcResponse<Array<{ vaultId: string; name: string; success: boolean; message: string }>>>;
     getStatus(vaultId: string): Promise<IpcResponse<VaultSyncStatus>>;
     resolveConflict(vaultId: string, filePath: string, strategy: 'local' | 'cloud' | 'both'): Promise<IpcResponse<void>>;
+    acquireLock(vaultId: string): Promise<IpcResponse<{ acquired: boolean; lockInfo?: SyncLockInfo }>>;
+    releaseLock(vaultId: string): Promise<IpcResponse<void>>;
+    checkLock(vaultId: string): Promise<IpcResponse<SyncLockInfo | null>>;
   };
   history: {
     getCommits(vaultId: string, limit?: number): Promise<IpcResponse<CommitEntry[]>>;
@@ -119,6 +124,13 @@ const conflictList    = $<HTMLUListElement>('conflict-list');
 const btnConflictLocal = $<HTMLButtonElement>('btn-conflict-local');
 const btnConflictCloud = $<HTMLButtonElement>('btn-conflict-cloud');
 const btnConflictBoth  = $<HTMLButtonElement>('btn-conflict-both');
+
+const btnHealthCheck  = $<HTMLButtonElement>('btn-health-check');
+const healthModal     = $('health-modal');
+const healthResults   = $('health-results');
+const btnHealthClose  = $<HTMLButtonElement>('btn-health-close');
+const btnHealthRecheck = $<HTMLButtonElement>('btn-health-recheck');
+const btnHealthRepair = $<HTMLButtonElement>('btn-health-repair');
 
 // ── Confirm Dialog (replaces native confirm()) ────────────────────────────
 function showConfirm(message: string, onConfirm: () => void, confirmLabel = 'Confirm', danger = false): void {
@@ -752,6 +764,12 @@ function registerEventListeners(): void {
   btnHistoryClose.addEventListener('click', () => historyModal.classList.add('hidden'));
   btnDiffClose.addEventListener('click', () => diffModal.classList.add('hidden'));
 
+  btnHealthCheck.addEventListener('click', () => handleHealthCheck());
+  btnHealthClose.addEventListener('click', () => healthModal.classList.add('hidden'));
+  btnHealthRecheck.addEventListener('click', () => handleHealthCheck());
+  btnHealthRepair.addEventListener('click', handleRepairVault);
+  healthModal.addEventListener('click', (e) => { if (e.target === healthModal) healthModal.classList.add('hidden'); });
+
   historyModal.addEventListener('click', (e) => { if (e.target === historyModal) historyModal.classList.add('hidden'); });
   diffModal.addEventListener('click', (e) => { if (e.target === diffModal) diffModal.classList.add('hidden'); });
 
@@ -901,7 +919,7 @@ function registerEventListeners(): void {
   document.addEventListener('keydown', (e) => {
     // Escape — close any open modal
     if (e.key === 'Escape') {
-      for (const modal of [conflictModal, historyModal, diffModal, versionsModal, importModal]) {
+      for (const modal of [conflictModal, historyModal, diffModal, versionsModal, importModal, healthModal]) {
         if (!modal.classList.contains('hidden')) {
           modal.classList.add('hidden');
           return;
@@ -1473,6 +1491,67 @@ async function handleSyncAll(): Promise<void> {
   } finally {
     setButtonLoading(btnSyncAll, false);
     hideLoading();
+  }
+}
+
+async function handleHealthCheck(): Promise<void> {
+  if (!selectedVaultId) return;
+  healthModal.classList.remove('hidden');
+  healthResults.innerHTML = '<div class="history-loading">Running checks...</div>';
+  btnHealthRepair.classList.add('hidden');
+
+  const res = await window.obsync.vault.healthCheck(selectedVaultId);
+  if (!res.success || !res.data) {
+    healthResults.innerHTML = '<div class="history-empty">Could not run health check.</div>';
+    return;
+  }
+
+  const { healthy, issues, repairable } = res.data;
+  healthResults.innerHTML = '';
+
+  if (healthy && issues.length === 0) {
+    healthResults.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;padding:16px;color:var(--success)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+          <polyline points="20 6 9 17 4 12"/>
+        </svg>
+        <span>All checks passed — vault is healthy.</span>
+      </div>`;
+    return;
+  }
+
+  for (const issue of issues) {
+    const row = document.createElement('div');
+    const isError = issue.severity === 'error';
+    row.style.cssText = `display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:8px;margin-bottom:8px;background:${isError ? 'rgba(239,68,68,0.08)' : 'rgba(234,179,8,0.08)'};border:1px solid ${isError ? 'rgba(239,68,68,0.25)' : 'rgba(234,179,8,0.25)'}`;
+    row.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="${isError ? '#ef4444' : '#eab308'}" stroke-width="2" width="16" height="16" style="flex-shrink:0;margin-top:2px">
+        ${isError
+          ? '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'
+          : '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>'}
+      </svg>
+      <div>
+        <div style="font-size:13px;font-weight:500;color:var(--text-primary)">${escapeHtml(issue.message)}</div>
+        <div style="font-size:11px;color:var(--text-secondary);margin-top:2px">Code: ${escapeHtml(issue.code)}</div>
+      </div>`;
+    healthResults.appendChild(row);
+  }
+
+  if (repairable) {
+    btnHealthRepair.classList.remove('hidden');
+  }
+}
+
+async function handleRepairVault(): Promise<void> {
+  if (!selectedVaultId) return;
+  setButtonLoading(btnHealthRepair, true);
+  const res = await window.obsync.vault.repair(selectedVaultId);
+  setButtonLoading(btnHealthRepair, false);
+  if (res.success) {
+    showToast('Vault repaired successfully', 'success');
+    await handleHealthCheck(); // re-run checks
+  } else {
+    showToast(res.error ?? 'Repair failed', 'error');
   }
 }
 

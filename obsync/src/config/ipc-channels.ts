@@ -46,6 +46,15 @@ export const IPC = {
   HISTORY_RESTORE_VERSION: 'history:restore-version',
   HISTORY_LIST_ARCHIVED_FILES: 'history:list-archived-files',
 
+  // Health check & repair
+  VAULT_HEALTH_CHECK: 'vault:health-check',
+  VAULT_REPAIR: 'vault:repair',
+
+  // Sync lock (multi-device coordination)
+  SYNC_ACQUIRE_LOCK: 'sync:acquire-lock',
+  SYNC_RELEASE_LOCK: 'sync:release-lock',
+  SYNC_CHECK_LOCK: 'sync:check-lock',
+
   // Events (main → renderer)
   EVENT_SYNC_PROGRESS: 'event:sync-progress',
   EVENT_SYNC_COMPLETE: 'event:sync-complete',

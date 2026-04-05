@@ -179,6 +179,35 @@ export function registerIpcHandlers(
     return reply(true, results);
   });
 
+  // ── Vault Health Check ─────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC.VAULT_HEALTH_CHECK, async (_event, vaultId: string) => {
+    const result = await gitSyncService.healthCheck(vaultId);
+    return reply(true, result);
+  });
+
+  ipcMain.handle(IPC.VAULT_REPAIR, async (_event, vaultId: string) => {
+    const result = await gitSyncService.repairVault(vaultId);
+    return reply(result.success, result, result.success ? undefined : result.message);
+  });
+
+  // ── Sync Lock ──────────────────────────────────────────────────────────────
+
+  ipcMain.handle(IPC.SYNC_ACQUIRE_LOCK, async (_event, vaultId: string) => {
+    const result = await gitSyncService.acquireSyncLock(vaultId);
+    return reply(true, result);
+  });
+
+  ipcMain.handle(IPC.SYNC_RELEASE_LOCK, async (_event, vaultId: string) => {
+    await gitSyncService.releaseSyncLock(vaultId);
+    return reply(true);
+  });
+
+  ipcMain.handle(IPC.SYNC_CHECK_LOCK, async (_event, vaultId: string) => {
+    const lockInfo = await gitSyncService.checkSyncLock(vaultId);
+    return reply(true, lockInfo);
+  });
+
   // ── History ────────────────────────────────────────────────────────────────
 
   ipcMain.handle(IPC.HISTORY_GET, async (_event, vaultId: string, limit: number) => {

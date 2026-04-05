@@ -216,6 +216,12 @@
           <button class="btn-danger-outline" id="btn-remove-vault" aria-label="Remove vault">
             Remove
           </button>
+          <button class="btn-secondary" id="btn-health-check" aria-label="Check vault health">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </svg>
+            Health Check
+          </button>
         </div>
 
         <!-- Auto-sync toggle -->
@@ -730,3 +736,30 @@
 <script type="module" src="../../dist/renderer/renderer/app.js"></script>
 </body>
 </html>
+
+<!-- Health Check Modal -->
+<div class="modal-overlay hidden" id="health-modal" role="dialog" aria-modal="true" aria-labelledby="health-title">
+  <div class="modal modal-wide">
+    <div class="modal-header">
+      <div>
+        <h2 id="health-title">Vault Health Check</h2>
+        <p style="color:var(--text-secondary);font-size:13px;margin-top:4px">Checks the local git repo and cloud connection for issues.</p>
+      </div>
+      <button class="btn-icon" id="btn-health-close" aria-label="Close health check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+        </svg>
+      </button>
+    </div>
+    <div id="health-results" style="min-height:80px;padding:8px 0"></div>
+    <div class="modal-actions" style="justify-content:flex-end;gap:10px">
+      <button class="btn-secondary" id="btn-health-recheck">Re-check</button>
+      <button class="btn-primary hidden" id="btn-health-repair">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+        Repair
+      </button>
+    </div>
+  </div>
+</div>
