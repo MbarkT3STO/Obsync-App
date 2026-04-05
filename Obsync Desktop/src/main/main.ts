@@ -14,6 +14,7 @@ import { GitSyncService } from '../services/git-sync.service';
 import { TrayManager } from './tray';
 import { registerIpcHandlers } from './ipc-handlers';
 import { createLogger } from '../utils/logger.util';
+import { IPC } from '../config/ipc-channels';
 
 const logger = createLogger('Main');
 
@@ -99,6 +100,13 @@ function createWindow(): BrowserWindow {
     // Restore auto-sync watchers using new git-based service
     gitSyncService.restoreAll(win);
 
+    // Update tray whenever auto-sync completes so last-sync time stays fresh
+    win.webContents.on('ipc-message', (_e, channel) => {
+      if (channel === IPC.EVENT_AUTOSYNC_TRIGGERED) {
+        trayManager?.updateMenu();
+      }
+    });
+
     // Sync on startup
     const cfg = storageService.load();
     if (cfg.settings.syncOnStartup) {
@@ -144,6 +152,7 @@ app.whenReady().then(() => {
     oauthService,
     () => mainWindow,
     gitSyncService,
+    () => trayManager,
   );
 
   const win = createWindow();

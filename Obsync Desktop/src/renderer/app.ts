@@ -964,16 +964,21 @@ function registerIpcListeners(): void {
   window.obsync.on.syncComplete((data) => {
     if (data.vaultId === selectedVaultId) {
       const type = data.result.success ? 'success' : 'error';
-      // Friendlier message — trim long raw messages
       let msg = data.result.message;
       if (msg.length > 80) msg = msg.slice(0, 77) + '...';
       showToast(msg, type);
+      // Reload vaults then immediately refresh the last-synced display
       loadVaults().then(() => {
         const vault = vaults.find(v => v.id === data.vaultId);
         if (vault) {
           lastSyncedEl.textContent = vault.lastSyncedAt
             ? new Date(vault.lastSyncedAt).toLocaleString()
             : 'Never';
+          // Also refresh the dashboard card if visible
+          const cardMeta = document.querySelector(`[data-card-status="${data.vaultId}"]`)?.closest('.vault-card')?.querySelector('.vault-card-meta span');
+          if (cardMeta && vault.lastSyncedAt) {
+            cardMeta.textContent = `Last sync: ${new Date(vault.lastSyncedAt).toLocaleString()}`;
+          }
         }
       });
     } else {
@@ -982,6 +987,8 @@ function registerIpcListeners(): void {
         const vault = vaults.find(v => v.id === data.vaultId);
         showToast(`${vault?.name ?? 'Vault'}: ${data.result.message}`, 'error');
       }
+      // Still refresh vault list so dashboard cards stay current
+      loadVaults();
     }
   });
 
@@ -994,13 +1001,17 @@ function registerIpcListeners(): void {
   // Auto-sync: only show toast if there were actual changes, not on every poll
   window.obsync.on.autoSyncTriggered((data) => {
     if (data.vaultId === selectedVaultId) {
-      // Update last-synced time silently — no toast for routine auto-sync
       loadVaults().then(() => {
         const vault = vaults.find(v => v.id === data.vaultId);
         if (vault?.lastSyncedAt) {
           lastSyncedEl.textContent = new Date(vault.lastSyncedAt).toLocaleString();
+          const cardMeta = document.querySelector(`[data-card-status="${data.vaultId}"]`)?.closest('.vault-card')?.querySelector('.vault-card-meta span');
+          if (cardMeta) cardMeta.textContent = `Last sync: ${new Date(vault.lastSyncedAt).toLocaleString()}`;
         }
       });
+    } else {
+      // Background vault — refresh dashboard cards silently
+      loadVaults();
     }
   });
 
@@ -1068,7 +1079,8 @@ async function handlePush(): Promise<void> {
   const res = await window.obsync.sync.push(selectedVaultId);
   btnPush.classList.remove('syncing');
   btnPush.disabled = false;
-  if (!res.success) showToast(res.error ?? 'Push failed', 'error');
+  if (res.success) refreshLastSynced(selectedVaultId);
+  else showToast(res.error ?? 'Push failed', 'error');
 }
 
 async function handlePull(): Promise<void> {
@@ -1078,7 +1090,24 @@ async function handlePull(): Promise<void> {
   const res = await window.obsync.sync.pull(selectedVaultId);
   btnPull.classList.remove('syncing');
   btnPull.disabled = false;
-  if (!res.success && !res.data) showToast(res.error ?? 'Pull failed', 'error');
+  if (res.success) refreshLastSynced(selectedVaultId);
+  else if (!res.data) showToast(res.error ?? 'Pull failed', 'error');
+}
+
+/** Re-fetches the vault list and updates the last-synced label for a specific vault. */
+async function refreshLastSynced(vaultId: string): Promise<void> {
+  await loadVaults();
+  const vault = vaults.find(v => v.id === vaultId);
+  if (!vault) return;
+  if (vaultId === selectedVaultId) {
+    lastSyncedEl.textContent = vault.lastSyncedAt
+      ? new Date(vault.lastSyncedAt).toLocaleString()
+      : 'Never';
+  }
+  const cardMeta = document.querySelector(`[data-card-status="${vaultId}"]`)?.closest('.vault-card')?.querySelector('.vault-card-meta span');
+  if (cardMeta && vault.lastSyncedAt) {
+    cardMeta.textContent = `Last sync: ${new Date(vault.lastSyncedAt).toLocaleString()}`;
+  }
 }
 
 async function handleValidate(): Promise<void> {

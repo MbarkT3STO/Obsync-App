@@ -27,6 +27,7 @@ export function registerIpcHandlers(
   oauthService: OAuthService,
   getWindow: () => BrowserWindow | null,
   gitSyncService: GitSyncService,
+  getTray: () => { updateMenu(): void } | null,
 ): void {
 
   // ── Vault ──────────────────────────────────────────────────────────────────
@@ -142,6 +143,7 @@ export function registerIpcHandlers(
     const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
     if (!win) return reply(false, undefined, 'No window');
     const result = await gitSyncService.push(vaultId, win);
+    if (result.success) getTray()?.updateMenu();
     return reply(result.success, result, result.success ? undefined : result.message);
   });
 
@@ -149,6 +151,7 @@ export function registerIpcHandlers(
     const win = BrowserWindow.fromWebContents(event.sender) ?? getWindow();
     if (!win) return reply(false, undefined, 'No window');
     const result = await gitSyncService.pull(vaultId, win);
+    if (result.success) getTray()?.updateMenu();
     return reply(result.success, result, result.success ? undefined : result.message);
   });
 
@@ -176,6 +179,7 @@ export function registerIpcHandlers(
       const r = await gitSyncService.pull(vault.id, win);
       results.push({ vaultId: vault.id, name: vault.name, ...r });
     }
+    getTray()?.updateMenu();
     return reply(true, results);
   });
 
