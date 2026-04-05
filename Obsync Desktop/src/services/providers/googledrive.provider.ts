@@ -602,11 +602,13 @@ export class GoogleDriveCloudProvider implements ICloudProvider {
   private async getValidToken(credentials: CloudCredentials): Promise<string> {
     try {
       if (!credentials.token) return '';
-      const length = credentials.token.length;
-      const isJson = credentials.token.trim().startsWith('{');
-      logger.info(`Processing token (length: ${length}, isJson: ${isJson})`);
-
-      const data = JSON.parse(credentials.token);
+      // Plain string token (e.g. passed directly by health check) — use as-is
+      let data: any;
+      try {
+        data = JSON.parse(credentials.token);
+      } catch {
+        return credentials.token;
+      }
       if (typeof data === 'string') return data;
 
       const buffer = 60 * 1000;

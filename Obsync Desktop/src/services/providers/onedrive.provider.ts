@@ -496,7 +496,13 @@ export class OneDriveCloudProvider implements ICloudProvider {
   private async getValidToken(credentials: CloudCredentials): Promise<string> {
     try {
       if (!credentials.token) return '';
-      const data = JSON.parse(credentials.token);
+      // Plain string token (e.g. passed directly by health check) — use as-is
+      let data: any;
+      try {
+        data = JSON.parse(credentials.token);
+      } catch {
+        return credentials.token;
+      }
       if (typeof data === 'string') return data;
       if (data.expires_at && Date.now() < data.expires_at - 60000) return data.access_token;
       if (!data.refresh_token) return data.access_token;

@@ -621,33 +621,54 @@ export class GitSyncService {
           }
         }
       } else if (creds && !GIT_PROVIDERS.has(creds.provider)) {
-        // Non-git: do a lightweight connectivity check.
-        // We intentionally avoid calling provider.validate() here because it
-        // triggers a full token-refresh cycle which can fail with 401 when the
-        // OAuth token has expired — that's a "needs re-auth" state, not a
-        // "provider unreachable" state, and the two must be distinguished.
+        // Non-git: check connectivity without triggering a token refresh cycle.
+        // We extract the access token directly from the stored JSON and test it.
+        // If the token is expired we report that clearly; we don't attempt a refresh
+        // here because a failed refresh would surface as a misleading "unreachable" error.
         try {
           const provider = this.getProvider(creds);
           if (!provider) {
             issues.push({ code: 'no_config', message: `No provider implementation found for "${creds.provider}"`, severity: 'error' });
           } else {
-            // Use validate() but map auth errors to a friendlier, actionable message
-            const result = await provider.validate(creds);
-            if (!result.success) {
-              const m = result.message ?? '';
-              const isAuthError =
-                m.includes('401') || m.includes('403') ||
-                m.includes('Access denied') || m.includes('Unauthorized') ||
-                m.includes('token') || m.includes('expired') ||
-                m.includes('invalid_grant') || m.includes('invalid_token');
-              if (isAuthError) {
-                issues.push({
-                  code: 'remote_unreachable',
-                  message: `${creds.provider.charAt(0).toUpperCase() + creds.provider.slice(1)} token is expired or invalid — open Cloud Configuration and sign in again to re-authenticate`,
-                  severity: 'warning', // warning, not error — vault data is safe, just needs re-auth
-                });
-              } else {
-                issues.push({ code: 'remote_unreachable', message: `Cloud provider unreachable: ${m}`, severity: 'error' });
+            // Build a shallow-clone of creds with the raw access_token extracted,
+            // bypassing getValidToken's refresh logic entirely.
+            let testCreds = creds;
+            let tokenExpired = false;
+            try {
+              const parsed = JSON.parse(creds.token);
+              if (parsed && typeof parsed === 'object' && parsed.access_token) {
+                const expiresAt: number = parsed.expires_at ?? 0;
+                if (expiresAt > 0 && Date.now() > expiresAt) {
+                  tokenExpired = true;
+                }
+                // Pass the raw access_token string so getValidToken returns it immediately
+                testCreds = { ...creds, token: parsed.access_token };
+              }
+            } catch { /* token is already a plain string — use as-is */ }
+
+            if (tokenExpired) {
+              issues.push({
+                code: 'remote_unreachable',
+                message: `${creds.provider.charAt(0).toUpperCase() + creds.provider.slice(1)} access token has expired — open Cloud Configuration and sign in again`,
+                severity: 'warning',
+              });
+            } else {
+              const result = await provider.validate(testCreds);
+              if (!result.success) {
+                const m = result.message ?? '';
+                const isAuthError =
+                  m.includes('401') || m.includes('403') ||
+                  m.includes('Access denied') || m.includes('Unauthorized') ||
+                  m.includes('invalid_grant') || m.includes('invalid_token');
+                if (isAuthError) {
+                  issues.push({
+                    code: 'remote_unreachable',
+                    message: `${creds.provider.charAt(0).toUpperCase() + creds.provider.slice(1)} token is invalid — open Cloud Configuration and sign in again`,
+                    severity: 'warning',
+                  });
+                } else {
+                  issues.push({ code: 'remote_unreachable', message: `Cloud provider unreachable: ${m}`, severity: 'error' });
+                }
               }
             }
           }
