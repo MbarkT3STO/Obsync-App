@@ -24,7 +24,7 @@
     "crypto-js": "^4.2.0",
     "dotenv": "^17.4.0",
     "p-limit": "^3.1.0",
-    "simple-git": "^3.22.0",
+    "simple-git": "^3.27.0",
     "webdav": "^5.9.0"
   }
 }

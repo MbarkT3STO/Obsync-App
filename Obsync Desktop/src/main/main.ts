@@ -16,6 +16,16 @@ import { registerIpcHandlers } from './ipc-handlers';
 import { createLogger } from '../utils/logger.util';
 import { IPC } from '../config/ipc-channels';
 
+// ── New multi-provider architecture ───────────────────────────────────────
+import { VaultManager } from '../vault/VaultManager';
+import { TokenStore } from '../auth/TokenStore';
+import { OAuthManager } from '../auth/OAuthManager';
+import { SyncEngine } from '../core/SyncEngine';
+import { ManifestManager } from '../core/ManifestManager';
+import { registerSyncHandlers } from '../ipc/syncHandlers';
+import { registerVaultHandlers } from '../ipc/vaultHandlers';
+import { registerOAuthHandlers } from '../ipc/oauthHandlers';
+
 const logger = createLogger('Main');
 
 // ── Composition root ───────────────────────────────────────────────────────
@@ -25,6 +35,13 @@ const cloudProvider   = new CloudProviderService(storageService);
 const historyService  = new HistoryService(vaultService, cloudProvider);
 const gitSyncService  = new GitSyncService(vaultService, cloudProvider, historyService, storageService);
 const oauthService    = new OAuthService();
+
+// ── New multi-provider composition root ───────────────────────────────────
+const tokenStore      = new TokenStore();
+const vaultManager    = new VaultManager();
+const manifestManager = new ManifestManager();
+const syncEngine      = new SyncEngine();
+const oauthManager    = new OAuthManager(tokenStore);
 
 let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
@@ -154,6 +171,11 @@ app.whenReady().then(() => {
     gitSyncService,
     () => trayManager,
   );
+
+  // Register new multi-provider IPC handlers
+  registerSyncHandlers(vaultManager, tokenStore, syncEngine, () => mainWindow);
+  registerVaultHandlers(vaultManager, tokenStore, manifestManager);
+  registerOAuthHandlers(oauthManager, tokenStore);
 
   const win = createWindow();
 

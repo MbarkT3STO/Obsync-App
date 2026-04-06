@@ -1,5 +1,19 @@
 /** All IPC channel names in one place — avoids magic strings */
 export const IPC = {
+  // ── Multi-provider (new) ───────────────────────────────────────────────────
+  SYNC_GET_PROVIDERS: 'sync:get-providers',
+  SYNC_CONNECT_PROVIDER: 'sync:connect-provider',
+  SYNC_DISCONNECT_PROVIDER: 'sync:disconnect-provider',
+  SYNC_TEST_CONNECTION: 'sync:test-connection',
+  SYNC_GET_VAULT_PROVIDER: 'sync:get-vault-provider',
+  SYNC_RUN: 'sync:run',
+  OAUTH_START: 'oauth:start',
+  OAUTH_STATUS: 'oauth:status',
+  VAULT_LIST_V2: 'vault:list-v2',
+  VAULT_ADD_V2: 'vault:add-v2',
+  VAULT_UPDATE: 'vault:update',
+  VAULT_REMOVE_V2: 'vault:remove-v2',
+  VAULT_GET: 'vault:get',
   // Vault
   VAULT_ADD: 'vault:add',
   VAULT_REMOVE: 'vault:remove',

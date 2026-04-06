@@ -1,0 +1,27 @@
+/**
+ * BitbucketProvider — syncs vaults to Bitbucket repositories.
+ *
+ * Auth: App Password (username + app password).
+ * Remote URL format: https://{username}:{appPassword}@bitbucket.org/{owner}/{repo}.git
+ *
+ * The token field stores "{username}:{appPassword}" — split on first colon.
+ */
+
+import { BaseGitProvider } from './BaseGitProvider';
+import type { ProviderCredentials } from '../SyncProvider';
+
+export class BitbucketProvider extends BaseGitProvider {
+  readonly id = 'bitbucket';
+  readonly name = 'Bitbucket';
+  readonly icon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M.778 1.213a.768.768 0 0 0-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95
+    a.772.772 0 0 0 .77-.646l3.27-20.03a.768.768 0 0 0-.768-.891zM14.52 15.53H9.522L8.17
+    8.466h7.561z"/>
+  </svg>`;
+
+  protected getRemoteUrl(credentials: ProviderCredentials): string {
+    const repoUrl = credentials.extra?.['repoUrl'] ?? '';
+    const token = credentials.token; // format: "username:appPassword"
+    return repoUrl.replace(/^https?:\/\/([^@]+@)?/, `https://${token}@`);
+  }
+}

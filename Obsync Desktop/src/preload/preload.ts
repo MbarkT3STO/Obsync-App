@@ -78,4 +78,31 @@ contextBridge.exposeInMainWorld('obsync', {
     autoSyncTriggered: () => ipcRenderer.removeAllListeners(IPC.EVENT_AUTOSYNC_TRIGGERED),
     startupPullDone: () => ipcRenderer.removeAllListeners(IPC.EVENT_STARTUP_PULL_DONE),
   },
+  // ── Multi-provider API (new) ─────────────────────────────────────────────
+  providers: {
+    list: () => ipcRenderer.invoke(IPC.SYNC_GET_PROVIDERS),
+    connect: (vaultId: string, providerId: string, credentials: unknown) =>
+      ipcRenderer.invoke(IPC.SYNC_CONNECT_PROVIDER, vaultId, providerId, credentials),
+    disconnect: (vaultId: string, providerId: string) =>
+      ipcRenderer.invoke(IPC.SYNC_DISCONNECT_PROVIDER, vaultId, providerId),
+    testConnection: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_TEST_CONNECTION, vaultId),
+    getVaultProvider: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_GET_VAULT_PROVIDER, vaultId),
+  },
+  syncV2: {
+    run: (vaultId: string) => ipcRenderer.invoke(IPC.SYNC_RUN, vaultId),
+  },
+  oauth: {
+    start: (providerId: string, vaultId: string) => ipcRenderer.invoke(IPC.OAUTH_START, providerId, vaultId),
+    status: (vaultId: string, providerId: string) => ipcRenderer.invoke(IPC.OAUTH_STATUS, vaultId, providerId),
+  },
+  vaultV2: {
+    list: () => ipcRenderer.invoke(IPC.VAULT_LIST_V2),
+    add: (localPath: string, providerId: string, providerConfig: unknown, syncOptions: unknown) =>
+      ipcRenderer.invoke(IPC.VAULT_ADD_V2, localPath, providerId, providerConfig, syncOptions),
+    update: (vaultId: string, partial: unknown) => ipcRenderer.invoke(IPC.VAULT_UPDATE, vaultId, partial),
+    remove: (vaultId: string) => ipcRenderer.invoke(IPC.VAULT_REMOVE_V2, vaultId),
+    get: (vaultId: string) => ipcRenderer.invoke(IPC.VAULT_GET, vaultId),
+  },
 });
+
+
