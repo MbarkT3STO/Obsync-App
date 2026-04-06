@@ -27,6 +27,9 @@ import { registerVaultHandlers } from '../ipc/vaultHandlers';
 import { registerOAuthHandlers } from '../ipc/oauthHandlers';
 import { registerAutoSyncHandlers } from '../ipc/autoSyncHandlers';
 import { AutoSyncEngine } from '../core/AutoSyncEngine';
+import { UpdaterService } from '../services/updater.service';
+import { gitignoreManager } from '../core/ObsidianGitignore';
+import { ipcMain } from 'electron';
 
 const logger = createLogger('Main');
 
@@ -45,6 +48,7 @@ const manifestManager = new ManifestManager();
 const syncEngine      = new SyncEngine();
 const oauthManager    = new OAuthManager(tokenStore);
 const autoSyncEngine  = new AutoSyncEngine(syncEngine, vaultManager, tokenStore);
+const updaterService  = new UpdaterService(() => mainWindow);
 
 let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
@@ -117,6 +121,8 @@ function createWindow(): BrowserWindow {
   });
 
   win.webContents.once('did-finish-load', async () => {
+    // Start auto-updater (30s delay, production only)
+    updaterService.start();
     // Restore auto-sync watchers using new git-based service
     gitSyncService.restoreAll(win);
 
@@ -188,6 +194,51 @@ app.whenReady().then(() => {
   registerOAuthHandlers(oauthManager, tokenStore);
   registerAutoSyncHandlers(autoSyncEngine, vaultManager, () => mainWindow);
 
+  // ── Gitignore IPC handlers ─────────────────────────────────────────────
+  ipcMain.handle(IPC.GITIGNORE_READ, async (_event, vaultId: string) => {
+    const vault = vaultService.getById(vaultId);
+    if (!vault) return { success: false, error: 'Vault not found' };
+    const content = await gitignoreManager.read(vault.localPath);
+    return { success: true, data: content };
+  });
+
+  ipcMain.handle(IPC.GITIGNORE_RESET, async (_event, vaultId: string) => {
+    const vault = vaultService.getById(vaultId);
+    if (!vault) return { success: false, error: 'Vault not found' };
+    await gitignoreManager.resetToDefaults(vault.localPath);
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC.GITIGNORE_ENSURE, async (_event, vaultId: string) => {
+    const vault = vaultService.getById(vaultId);
+    if (!vault) return { success: false, error: 'Vault not found' };
+    const result = await gitignoreManager.ensureGitignore(vault.localPath);
+    return { success: true, data: result };
+  });
+
+  // ── Auto-updater IPC handlers ──────────────────────────────────────────
+  ipcMain.handle(IPC.UPDATER_CHECK, async () => {
+    const result = await updaterService.manualCheck();
+    return {
+      success: true,
+      data: {
+        ...result,
+        currentVersion: updaterService.getCurrentVersion(),
+        lastChecked: updaterService.getLastChecked()?.toISOString() ?? null,
+      },
+    };
+  });
+
+  ipcMain.handle(IPC.UPDATER_INSTALL, async () => {
+    await updaterService.installNow();
+    return { success: true };
+  });
+
+  ipcMain.handle(IPC.UPDATER_DISMISS, () => {
+    updaterService.dismiss();
+    return { success: true };
+  });
+
   const win = createWindow();
 
   // Create tray
@@ -215,6 +266,7 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {
   gitSyncService.stopAll();
   autoSyncEngine.stopAll();
+  updaterService.stop();
   trayManager?.destroy();
   if (process.platform !== 'darwin') app.quit();
 });

@@ -1658,3 +1658,96 @@
 #btn-validate.hidden {
   display: none !important;
 }
+
+/* ── Update Progress Bar ────────────────────────────────────────────── */
+.update-progress-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  z-index: 9999;
+  background: rgba(255,255,255,0.06);
+  overflow: hidden;
+}
+.update-progress-bar.hidden { display: none !important; }
+
+.update-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-light));
+  background-size: 200% auto;
+  transition: width 0.3s var(--ease-smooth);
+  border-radius: 0 2px 2px 0;
+}
+.update-progress-fill.shimmer {
+  animation: shimmer 1.5s linear infinite;
+}
+
+/* ── Update Banner ──────────────────────────────────────────────────── */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--layer-2);
+  border-bottom: 0.5px solid var(--border-accent);
+  border-left: 3px solid var(--accent);
+  animation: slideInUp 0.3s var(--ease-spring);
+  flex-shrink: 0;
+  z-index: 50;
+  position: relative;
+}
+.update-banner.hidden { display: none !important; }
+
+.update-banner-icon {
+  width: 18px; height: 18px;
+  color: var(--accent-light);
+  flex-shrink: 0;
+  stroke-width: 1.5;
+}
+
+.update-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.update-banner-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-1);
+  letter-spacing: -0.1px;
+}
+.update-banner-sub {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.update-banner-actions {
+  display: flex;
+  gap: 7px;
+  flex-shrink: 0;
+}
+.update-banner-btn {
+  height: 30px !important;
+  font-size: 12px !important;
+  padding: 0 12px !important;
+}
+
+/* ── Gitignore Viewer ───────────────────────────────────────────────── */
+.gitignore-viewer {
+  flex: 1;
+  overflow-y: auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-2);
+  background: var(--layer-2);
+  border: 0.5px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 14px 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  min-height: 200px;
+}

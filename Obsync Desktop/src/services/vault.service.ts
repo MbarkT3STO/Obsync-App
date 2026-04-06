@@ -3,6 +3,7 @@ import { generateId } from '../utils/id.util';
 import { createLogger } from '../utils/logger.util';
 import type { Vault } from '../models/vault.model';
 import type { StorageService } from './storage.service';
+import { gitignoreManager } from '../core/ObsidianGitignore';
 
 const logger = createLogger('VaultService');
 
@@ -32,6 +33,12 @@ export class VaultService {
 
     this.storage.update({ vaults: [...config.vaults, vault] });
     logger.info(`Vault added: ${vault.name} (${vault.id})`);
+
+    // Ensure .gitignore exists — fire-and-forget, non-blocking
+    gitignoreManager.ensureGitignore(localPath).catch(e =>
+      logger.warn(`Could not create .gitignore for ${vault.name}:`, e)
+    );
+
     return vault;
   }
 

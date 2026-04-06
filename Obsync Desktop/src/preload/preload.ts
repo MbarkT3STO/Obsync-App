@@ -117,6 +117,24 @@ contextBridge.exposeInMainWorld('obsync', {
     },
     offStateChanged: () => ipcRenderer.removeAllListeners(IPC.AUTOSYNC_STATE_CHANGED),
   },
+  gitignore: {
+    read:   (vaultId: string) => ipcRenderer.invoke(IPC.GITIGNORE_READ, vaultId),
+    reset:  (vaultId: string) => ipcRenderer.invoke(IPC.GITIGNORE_RESET, vaultId),
+    ensure: (vaultId: string) => ipcRenderer.invoke(IPC.GITIGNORE_ENSURE, vaultId),
+  },
+  updater: {
+    check:   () => ipcRenderer.invoke(IPC.UPDATER_CHECK),
+    install: () => ipcRenderer.invoke(IPC.UPDATER_INSTALL),
+    dismiss: () => ipcRenderer.invoke(IPC.UPDATER_DISMISS),
+    onProgress: (cb: (data: { percent: number }) => void) => {
+      ipcRenderer.on(IPC.EVENT_UPDATE_PROGRESS, (_e, data) => cb(data));
+    },
+    onReady: (cb: (data: { version: string; publishedAt: string }) => void) => {
+      ipcRenderer.on(IPC.EVENT_UPDATE_READY, (_e, data) => cb(data));
+    },
+    offProgress: () => ipcRenderer.removeAllListeners(IPC.EVENT_UPDATE_PROGRESS),
+    offReady:    () => ipcRenderer.removeAllListeners(IPC.EVENT_UPDATE_READY),
+  },
 });
 
 

@@ -19,28 +19,9 @@ import type {
   CommitEntry,
 } from '../SyncProvider';
 import { createLogger } from '../../utils/logger.util';
+import { gitignoreManager } from '../../core/ObsidianGitignore';
 
 const logger = createLogger('BaseGitProvider');
-
-/** .gitignore written into every managed vault on first push */
-const VAULT_GITIGNORE = [
-  '.obsidian/workspace',
-  '.obsidian/workspace.json',
-  '.obsidian/workspace-mobile',
-  '.obsidian/workspace-mobile.json',
-  '.obsidian/cache',
-  '.obsidian/.trash/',
-  '.obsync/',
-  '.trash/',
-  '*.tmp',
-  '*.bak',
-  '*.swp',
-  '*~',
-  '*.lock',
-  '.DS_Store',
-  'Thumbs.db',
-  'desktop.ini',
-].join('\n');
 
 export abstract class BaseGitProvider implements SyncProvider {
   abstract readonly id: string;
@@ -209,10 +190,15 @@ export abstract class BaseGitProvider implements SyncProvider {
       await git.addConfig('user.name', 'Obsync', false, 'local');
     }
 
-    // Write .gitignore on first init
-    const gitignorePath = path.join(this.vaultPath, '.gitignore');
-    if (!fs.existsSync(gitignorePath)) {
-      fs.writeFileSync(gitignorePath, VAULT_GITIGNORE, 'utf-8');
+    // Ensure .gitignore exists with all required Obsidian rules
+    const gitignoreResult = await gitignoreManager.ensureGitignore(this.vaultPath);
+    if (gitignoreResult.created || gitignoreResult.updated) {
+      await git.add('.gitignore');
+      await git.commit(
+        gitignoreResult.created
+          ? 'obsync: add Obsidian .gitignore'
+          : `obsync: update .gitignore (+${gitignoreResult.addedRules.length} rules)`,
+      ).catch(() => {}); // ignore if nothing to commit
     }
 
     const remoteUrl = this.getRemoteUrl(creds);

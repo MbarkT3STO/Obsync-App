@@ -62,6 +62,20 @@ interface ObsyncAPI {
     get(): Promise<IpcResponse<'dark' | 'light'>>;
     set(theme: 'dark' | 'light'): Promise<IpcResponse<void>>;
   };
+  gitignore: {
+    read(vaultId: string): Promise<IpcResponse<string | null>>;
+    reset(vaultId: string): Promise<IpcResponse<void>>;
+    ensure(vaultId: string): Promise<IpcResponse<{ created: boolean; updated: boolean; addedRules: string[] }>>;
+  };
+  updater: {
+    check(): Promise<IpcResponse<{ upToDate: boolean; version?: string; error?: string; currentVersion: string; lastChecked: string | null }>>;
+    install(): Promise<IpcResponse<void>>;
+    dismiss(): Promise<IpcResponse<void>>;
+    onProgress(cb: (data: { percent: number }) => void): void;
+    onReady(cb: (data: { version: string; publishedAt: string }) => void): void;
+    offProgress(): void;
+    offReady(): void;
+  };
   on: {
     syncProgress(cb: (status: VaultSyncStatus) => void): void;
     syncComplete(cb: (data: { vaultId: string; result: { success: boolean; message: string } }) => void): void;
@@ -337,6 +351,26 @@ const settingMinimizeTray   = $<HTMLInputElement>('setting-minimize-tray');
 const settingStartMinimized = $<HTMLInputElement>('setting-start-minimized');
 const loadingOverlay       = $('loading-overlay');
 const loadingText          = $('loading-text');
+
+// Update UI
+const updateProgressBar   = $('update-progress-bar');
+const updateProgressFill  = $('update-progress-fill');
+const updateBanner        = $('update-banner');
+const updateBannerSub     = $('update-banner-sub');
+const btnUpdateRestart    = $<HTMLButtonElement>('btn-update-restart');
+const btnUpdateLater      = $<HTMLButtonElement>('btn-update-later');
+const btnCheckUpdates     = $<HTMLButtonElement>('btn-check-updates');
+const settingsVersionInfo = $('settings-version-info');
+const updateCheckResult   = $('update-check-result');
+const updateCheckMsg      = $('update-check-msg');
+
+// Gitignore
+const btnGitignoreView    = $<HTMLButtonElement>('btn-gitignore-view');
+const btnGitignoreReset   = $<HTMLButtonElement>('btn-gitignore-reset');
+const gitignoreModal      = $('gitignore-modal');
+const gitignoreContent    = $('gitignore-content');
+const gitignoreModalPath  = $('gitignore-modal-path');
+const btnGitignoreClose   = $<HTMLButtonElement>('btn-gitignore-close');
 
 // ── Custom Select Controls ────────────────────────────────────────────────
 class CustomSelect {
@@ -825,6 +859,22 @@ function registerEventListeners(): void {
   settingStartMinimized.addEventListener('change', () =>
     window.obsync.settings.set({ startMinimized: settingStartMinimized.checked }));
 
+  // ── Update UI ────────────────────────────────────────────────────────────
+  btnUpdateRestart.addEventListener('click', () => window.obsync.updater.install());
+  btnUpdateLater.addEventListener('click', () => {
+    window.obsync.updater.dismiss();
+    updateBanner.classList.add('hidden');
+  });
+  btnCheckUpdates.addEventListener('click', handleCheckUpdates);
+
+  // ── Gitignore ────────────────────────────────────────────────────────────
+  btnGitignoreView.addEventListener('click', handleGitignoreView);
+  btnGitignoreReset.addEventListener('click', handleGitignoreReset);
+  btnGitignoreClose.addEventListener('click', () => gitignoreModal.classList.add('hidden'));
+  gitignoreModal.addEventListener('click', (e) => {
+    if (e.target === gitignoreModal) gitignoreModal.classList.add('hidden');
+  });
+
   btnMenuTrigger.addEventListener('click', toggleMobileSidebar);
 
   btnImportCloud.addEventListener('click', () => {
@@ -948,7 +998,7 @@ function registerEventListeners(): void {
   document.addEventListener('keydown', (e) => {
     // Escape — close any open modal
     if (e.key === 'Escape') {
-      for (const modal of [conflictModal, historyModal, diffModal, versionsModal, importModal, healthModal, aboutModal]) {
+      for (const modal of [conflictModal, historyModal, diffModal, versionsModal, importModal, healthModal, aboutModal, gitignoreModal]) {
         if (!modal.classList.contains('hidden')) {
           modal.classList.add('hidden');
           return;
@@ -1058,6 +1108,24 @@ function registerIpcListeners(): void {
       setTimeout(() => banner.remove(), 4000);
     }
     loadVaults();
+  });
+
+  // ── Update events ────────────────────────────────────────────────────────
+  window.obsync.updater.onProgress(({ percent }) => {
+    updateProgressBar.classList.remove('hidden');
+    updateProgressFill.style.width = `${percent}%`;
+    if (percent >= 100) {
+      updateProgressFill.classList.remove('shimmer');
+    } else {
+      updateProgressFill.classList.add('shimmer');
+    }
+  });
+
+  window.obsync.updater.onReady(({ version }) => {
+    updateProgressBar.classList.add('hidden');
+    updateProgressFill.style.width = '0%';
+    updateBannerSub.textContent = `Obsync v${version} will install on next restart`;
+    updateBanner.classList.remove('hidden');
   });
 }
 
@@ -1411,6 +1479,16 @@ async function loadSettings(): Promise<void> {
   settingMinimizeTray.checked   = s.minimizeToTray;
   settingStartMinimized.checked = s.startMinimized;
 
+  // Populate version info
+  const verRes = await window.obsync.updater.check().catch(() => null);
+  if (verRes?.success && verRes.data) {
+    const { currentVersion, lastChecked } = verRes.data;
+    const checkedStr = lastChecked
+      ? ` · Last checked: ${new Date(lastChecked).toLocaleString()}`
+      : '';
+    settingsVersionInfo.textContent = `v${currentVersion}${checkedStr}`;
+  }
+
   if (s.syncOnStartup) {
     showStartupBanner();
   }
@@ -1739,6 +1817,75 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+// ── Update handlers ────────────────────────────────────────────────────────
+
+async function handleCheckUpdates(): Promise<void> {
+  setButtonLoading(btnCheckUpdates, true);
+  updateCheckResult.classList.add('hidden');
+
+  const res = await window.obsync.updater.check();
+  setButtonLoading(btnCheckUpdates, false);
+  updateCheckResult.classList.remove('hidden');
+
+  if (!res.success) {
+    updateCheckMsg.textContent = `Check failed — ${res.error ?? 'unknown error'}`;
+    updateCheckMsg.style.color = 'var(--danger)';
+    return;
+  }
+
+  const d = res.data!;
+  const checkedAt = d.lastChecked ? new Date(d.lastChecked).toLocaleTimeString() : '';
+
+  if (d.upToDate) {
+    updateCheckMsg.textContent = `Up to date ✓  (v${d.currentVersion}${checkedAt ? ` · checked ${checkedAt}` : ''})`;
+    updateCheckMsg.style.color = 'var(--success)';
+  } else if (d.error) {
+    updateCheckMsg.textContent = `Check failed — ${d.error}`;
+    updateCheckMsg.style.color = 'var(--danger)';
+  } else {
+    updateCheckMsg.textContent = `v${d.version} available — downloading in background…`;
+    updateCheckMsg.style.color = 'var(--accent-light)';
+  }
+}
+
+// ── Gitignore handlers ─────────────────────────────────────────────────────
+
+async function handleGitignoreView(): Promise<void> {
+  if (!selectedVaultId) return;
+  const vault = vaults.find(v => v.id === selectedVaultId);
+  gitignoreModalPath.textContent = vault ? `${vault.localPath}/.gitignore` : '';
+  gitignoreContent.textContent = 'Loading…';
+  gitignoreModal.classList.remove('hidden');
+
+  const res = await window.obsync.gitignore.read(selectedVaultId);
+  if (res.success && res.data) {
+    gitignoreContent.textContent = res.data;
+  } else if (res.success && res.data === null) {
+    gitignoreContent.textContent = '(no .gitignore found — click Reset to create one)';
+  } else {
+    gitignoreContent.textContent = `Error: ${res.error ?? 'could not read file'}`;
+  }
+}
+
+async function handleGitignoreReset(): Promise<void> {
+  if (!selectedVaultId) return;
+  showConfirm(
+    'Reset .gitignore to Obsync defaults? Your custom rules below the auto-generated section will be lost.',
+    async () => {
+      const res = await window.obsync.gitignore.reset(selectedVaultId!);
+      if (res.success) {
+        showToast('.gitignore reset to defaults', 'success');
+      } else {
+        showToast(res.error ?? 'Reset failed', 'error');
+      }
+    },
+    'Reset',
+    true,
+  );
+}
+
+// ── Archived files / versions ──────────────────────────────────────────────
 
 async function handleLoadArchivedFiles(): Promise<void> {
   if (!selectedVaultId) return;

@@ -86,4 +86,17 @@ export const IPC = {
   EVENT_AUTOSYNC_TRIGGERED: 'event:autosync-triggered',
   EVENT_STARTUP_PULL_DONE: 'event:startup-pull-done',
   EVENT_TOKEN_REFRESHED: 'event:token-refreshed',
+
+  // Gitignore management
+  GITIGNORE_READ:   'gitignore:read',
+  GITIGNORE_RESET:  'gitignore:reset',
+  GITIGNORE_ENSURE: 'gitignore:ensure',
+
+  // Auto-updater
+  UPDATER_CHECK:    'updater:check',
+  UPDATER_INSTALL:  'updater:install',
+  UPDATER_DISMISS:  'updater:dismiss',
+  // Events: main → renderer
+  EVENT_UPDATE_PROGRESS: 'event:update-progress',
+  EVENT_UPDATE_READY:    'event:update-ready',
 } as const;
