@@ -564,6 +564,15 @@ function updateLabel(
       btnOAuth.classList.add('hidden');
     }
   }
+
+  // Show Validate only for git providers — visibility also depends on token value (handled by input event)
+  updateValidateVisibility();
+}
+
+function updateValidateVisibility(): void {
+  const meta = getProviderMeta(currentProvider);
+  const hasToken = inputToken.value.trim().length > 0;
+  btnValidate.classList.toggle('hidden', !(meta.isGit && hasToken));
 }
 
 async function loadTheme(): Promise<void> {
@@ -676,6 +685,7 @@ async function selectVault(vaultId: string): Promise<void> {
     updateProviderBadge(null);
   }
   inputToken.value = '';
+  updateValidateVisibility();
 
   await loadAutoSyncConfig(vaultId);
 }
@@ -753,6 +763,7 @@ function registerEventListeners(): void {
   });
   btnCollapse.addEventListener('click', toggleSidebar);
   btnToggleToken.addEventListener('click', toggleTokenVisibility);
+  inputToken.addEventListener('input', updateValidateVisibility);
   btnRemove.addEventListener('click', handleRemoveVault);
   btnPush.addEventListener('click', handlePush);
   btnPull.addEventListener('click', handlePull);
@@ -1244,6 +1255,7 @@ async function handleSaveConfig(e: Event): Promise<void> {
   if (initRes.success) {
     showToast('Configuration saved', 'success');
     inputToken.value = '';
+    updateValidateVisibility();
     // Update provider cache and icon immediately
     vaultProviderCache.set(selectedVaultId, provider);
     updateVaultDetailIcon(provider);

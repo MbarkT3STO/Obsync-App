@@ -235,15 +235,15 @@
             </label>
           </div>
           <div class="autosync-options hidden" id="autosync-options">
-            <div class="form-grid" style="margin-top:14px;margin-bottom:0">
+            <div class="form-grid autosync-grid" style="margin-top:14px;margin-bottom:0">
               <div class="form-group" style="margin-bottom:0">
                 <label for="autosync-debounce">Debounce delay (seconds)</label>
-                <input type="number" id="autosync-debounce" min="2" max="60" value="5" style="max-width:120px" />
+                <input type="number" id="autosync-debounce" min="2" max="60" value="5" class="input-number-sm" />
                 <span class="field-hint">Wait this long after the last file change before uploading.</span>
               </div>
               <div class="form-group" style="margin-bottom:0">
                 <label for="autosync-poll">Remote poll interval (seconds)</label>
-                <input type="number" id="autosync-poll" min="30" max="3600" value="120" style="max-width:120px" />
+                <input type="number" id="autosync-poll" min="30" max="3600" value="120" class="input-number-sm" />
                 <span class="field-hint">How often to check the cloud for changes from other devices.</span>
               </div>
             </div>
@@ -254,6 +254,7 @@
         <section class="config-section" aria-labelledby="cloud-config-title">
           <h2 id="cloud-config-title" class="section-title">Cloud Configuration</h2>
           <form id="cloud-form" novalidate>
+            <!-- Row 1: Provider (full width) -->
             <div class="form-grid">
               <div class="form-group">
                 <label>Sync Provider</label>
@@ -341,12 +342,17 @@
                   </div>
                 </div>
               </div>
+              <!-- Repo URL — hidden for OAuth cloud providers -->
               <div class="form-group">
                 <label for="input-repo-url" id="label-repo-url">Repository URL</label>
                 <input type="url" id="input-repo-url"
                   placeholder="https://github.com/user/repo.git"
                   autocomplete="off" spellcheck="false" />
               </div>
+            </div>
+
+            <!-- Row 2: Branch + Cloud Vault Name (same row, cloud-vault-name hidden for git) -->
+            <div class="form-grid form-grid-row2">
               <div class="form-group">
                 <label for="input-branch" id="label-branch">Branch</label>
                 <input type="text" id="input-branch" placeholder="main" value="main"
@@ -356,8 +362,12 @@
                 <label for="input-cloud-vault-name">Cloud Vault Name</label>
                 <input type="text" id="input-cloud-vault-name" placeholder="e.g. My Obsidian Vault"
                   autocomplete="off" spellcheck="false" />
-                <span class="field-hint">The folder name on the cloud (without <code>Obsync_</code> prefix). Defaults to the local folder name.</span>
+                <span class="field-hint">Folder name on the cloud (without <code>Obsync_</code> prefix).</span>
               </div>
+            </div>
+
+            <!-- Row 3: Token (full width) -->
+            <div class="form-grid">
               <div class="form-group">
                 <label for="input-token" id="label-token">Access Token / Password</label>
                 <div class="input-with-toggle">
@@ -379,8 +389,10 @@
                 <span class="field-hint">Encrypted locally — never exposed to the UI layer.</span>
               </div>
             </div>
+
             <div class="form-actions">
-              <button type="button" class="btn-secondary" id="btn-validate">
+              <!-- Validate: hidden by default, shown only for git providers when token is typed -->
+              <button type="button" class="btn-secondary hidden" id="btn-validate">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
                   <polyline points="22 4 12 14.01 9 11.01"/>

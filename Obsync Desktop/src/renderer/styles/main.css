@@ -1624,3 +1624,37 @@
   padding: 40px;
   grid-column: 1 / -1;
 }
+
+/* ── Cloud Config Form — row-specific grid overrides ────────────────── */
+
+/* Row 2 (Branch + Cloud Vault Name): neither column spans full width */
+.form-grid-row2 .form-group:first-child {
+  grid-column: auto;
+}
+
+/* Row 3 (Token): single field spans full width */
+.form-grid .form-group:only-child {
+  grid-column: 1 / -1;
+}
+
+/* Number inputs in autosync panel — compact, centered */
+.autosync-grid {
+  grid-template-columns: 1fr 1fr;
+}
+.autosync-grid .form-group:first-child {
+  grid-column: auto;
+}
+
+.input-number-sm {
+  width: 100px !important;
+  text-align: center;
+}
+
+/* Validate button — fade in/out smoothly */
+#btn-validate {
+  transition: opacity 0.15s var(--ease-smooth), transform 0.15s var(--ease-spring),
+              background 0.15s, border-color 0.15s, color 0.15s;
+}
+#btn-validate.hidden {
+  display: none !important;
+}
