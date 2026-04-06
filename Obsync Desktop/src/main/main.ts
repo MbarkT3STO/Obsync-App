@@ -25,6 +25,8 @@ import { ManifestManager } from '../core/ManifestManager';
 import { registerSyncHandlers } from '../ipc/syncHandlers';
 import { registerVaultHandlers } from '../ipc/vaultHandlers';
 import { registerOAuthHandlers } from '../ipc/oauthHandlers';
+import { registerAutoSyncHandlers } from '../ipc/autoSyncHandlers';
+import { AutoSyncEngine } from '../core/AutoSyncEngine';
 
 const logger = createLogger('Main');
 
@@ -42,6 +44,7 @@ const vaultManager    = new VaultManager();
 const manifestManager = new ManifestManager();
 const syncEngine      = new SyncEngine();
 const oauthManager    = new OAuthManager(tokenStore);
+const autoSyncEngine  = new AutoSyncEngine(syncEngine, vaultManager, tokenStore);
 
 let mainWindow: BrowserWindow | null = null;
 let trayManager: TrayManager | null = null;
@@ -117,6 +120,13 @@ function createWindow(): BrowserWindow {
     // Restore auto-sync watchers using new git-based service
     gitSyncService.restoreAll(win);
 
+    // Restore new multi-provider auto-sync watchers
+    for (const vault of vaultManager.list()) {
+      if (vault.syncOptions.autoSync) {
+        autoSyncEngine.start(vault.id);
+      }
+    }
+
     // Update tray whenever auto-sync completes so last-sync time stays fresh
     win.webContents.on('ipc-message', (_e, channel) => {
       if (channel === IPC.EVENT_AUTOSYNC_TRIGGERED) {
@@ -176,6 +186,7 @@ app.whenReady().then(() => {
   registerSyncHandlers(vaultManager, tokenStore, syncEngine, () => mainWindow);
   registerVaultHandlers(vaultManager, tokenStore, manifestManager);
   registerOAuthHandlers(oauthManager, tokenStore);
+  registerAutoSyncHandlers(autoSyncEngine, vaultManager, () => mainWindow);
 
   const win = createWindow();
 
@@ -203,6 +214,7 @@ app.on('before-quit', () => {
 
 app.on('window-all-closed', () => {
   gitSyncService.stopAll();
+  autoSyncEngine.stopAll();
   trayManager?.destroy();
   if (process.platform !== 'darwin') app.quit();
 });

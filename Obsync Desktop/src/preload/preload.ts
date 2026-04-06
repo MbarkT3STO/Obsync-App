@@ -103,6 +103,20 @@ contextBridge.exposeInMainWorld('obsync', {
     remove: (vaultId: string) => ipcRenderer.invoke(IPC.VAULT_REMOVE_V2, vaultId),
     get: (vaultId: string) => ipcRenderer.invoke(IPC.VAULT_GET, vaultId),
   },
+  autoSyncV2: {
+    start: (vaultId: string) => ipcRenderer.invoke(IPC.AUTOSYNC_START, vaultId),
+    stop: (vaultId: string) => ipcRenderer.invoke(IPC.AUTOSYNC_STOP, vaultId),
+    pause: (vaultId: string) => ipcRenderer.invoke(IPC.AUTOSYNC_PAUSE, vaultId),
+    resume: (vaultId: string) => ipcRenderer.invoke(IPC.AUTOSYNC_RESUME, vaultId),
+    forceNow: (vaultId: string) => ipcRenderer.invoke(IPC.AUTOSYNC_FORCE_NOW, vaultId),
+    status: (vaultId: string) => ipcRenderer.invoke(IPC.AUTOSYNC_STATUS, vaultId),
+    updateConfig: (vaultId: string, config: unknown) =>
+      ipcRenderer.invoke(IPC.AUTOSYNC_UPDATE_CONFIG, vaultId, config),
+    onStateChanged: (cb: (event: unknown) => void) => {
+      ipcRenderer.on(IPC.AUTOSYNC_STATE_CHANGED, (_e, data) => cb(data));
+    },
+    offStateChanged: () => ipcRenderer.removeAllListeners(IPC.AUTOSYNC_STATE_CHANGED),
+  },
 });
 
 

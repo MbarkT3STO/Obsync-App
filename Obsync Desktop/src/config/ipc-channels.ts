@@ -1,5 +1,15 @@
 /** All IPC channel names in one place — avoids magic strings */
 export const IPC = {
+  // ── Multi-provider auto-sync (new) ────────────────────────────────────────
+  AUTOSYNC_START: 'autosync:start',
+  AUTOSYNC_STOP: 'autosync:stop',
+  AUTOSYNC_PAUSE: 'autosync:pause',
+  AUTOSYNC_RESUME: 'autosync:resume',
+  AUTOSYNC_FORCE_NOW: 'autosync:force-now',
+  AUTOSYNC_STATUS: 'autosync:status',
+  AUTOSYNC_UPDATE_CONFIG: 'autosync:update-config',
+  AUTOSYNC_STATE_CHANGED: 'autosync:state-changed',
+
   // ── Multi-provider (new) ───────────────────────────────────────────────────
   SYNC_GET_PROVIDERS: 'sync:get-providers',
   SYNC_CONNECT_PROVIDER: 'sync:connect-provider',
