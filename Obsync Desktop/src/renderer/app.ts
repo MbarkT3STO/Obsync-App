@@ -1620,6 +1620,7 @@ async function setTheme(theme: 'dark' | 'light'): Promise<void> {
 
 function applyTheme(theme: 'dark' | 'light'): void {
   document.documentElement.setAttribute('data-theme', theme);
+  document.body.classList.toggle('theme-light', theme === 'light');
   themeDarkBtn.classList.toggle('active', theme === 'dark');
   themeLightBtn.classList.toggle('active', theme === 'light');
 }
