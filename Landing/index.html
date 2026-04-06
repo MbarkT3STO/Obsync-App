@@ -7,16 +7,14 @@
   <title>Obsync — Sync Your Obsidian Vaults</title>
   <link rel="icon" type="image/png" href="../Obsync Desktop/assets/icon.png" />
   <link rel="stylesheet" href="style.css" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet" />
 </head>
 <body>
 
   <!-- ── Nav ──────────────────────────────────────────────────────────── -->
   <nav class="nav" id="nav">
     <div class="nav-inner">
-      <a href="#" class="nav-brand">
-        <img src="../Obsync Desktop/assets/logo.png" alt="Obsync" class="nav-logo" />
+      <a href="https://obsync.netlify.app/" class="nav-brand">
+        <img src="assets/logo.png" alt="Obsync" class="nav-logo" />
         <span>Obsync</span>
       </a>
       <ul class="nav-links">
@@ -47,6 +45,7 @@
       <div class="orb orb-3"></div>
       <div class="grid-overlay"></div>
     </div>
+    <div class="hero-glow"></div>
     <div class="container hero-content">
       <div class="hero-badge">
         <span class="badge-dot"></span>
@@ -221,54 +220,66 @@
         <h2 class="section-title">Works with your stack</h2>
         <p class="section-sub">Connect to any of 8 cloud providers. Git providers use native push/pull. Cloud storage providers sync your actual files — no bundles, no lock-in.</p>
       </div>
-      <div class="providers-grid">
-        <div class="provider-card">
-          <div class="provider-icon github">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+      <div class="providers-groups">
+        <!-- Git Providers -->
+        <div>
+          <div class="providers-group-label">Git Providers</div>
+          <div class="providers-group-grid">
+            <div class="provider-card">
+              <div class="provider-icon github">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              </div>
+              <div class="provider-meta"><span class="provider-name">GitHub</span><span class="provider-type">Git</span></div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-icon gitlab">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.72 3.11-9.48a.84.84 0 0 1 1.59 0l3.03 9.24h4l3.03-9.24a.84.84 0 0 1 1.59 0l3.11 9.48 1.22 3.72a.84.84 0 0 1-.3.94z"/></svg>
+              </div>
+              <div class="provider-meta"><span class="provider-name">GitLab</span><span class="provider-type">Git</span></div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-icon bitbucket">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 3h16l2 11-10 7-10-7 2-11z"/><path d="M12 3v18"/></svg>
+              </div>
+              <div class="provider-meta"><span class="provider-name">Bitbucket</span><span class="provider-type">Git</span></div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-icon git">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              </div>
+              <div class="provider-meta"><span class="provider-name">Custom Git</span><span class="provider-type">Git</span></div>
+            </div>
           </div>
-          <span>GitHub</span>
         </div>
-        <div class="provider-card">
-          <div class="provider-icon gitlab">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.72 3.11-9.48a.84.84 0 0 1 1.59 0l3.03 9.24h4l3.03-9.24a.84.84 0 0 1 1.59 0l3.11 9.48 1.22 3.72a.84.84 0 0 1-.3.94z"/></svg>
+        <!-- Cloud Providers -->
+        <div>
+          <div class="providers-group-label">Cloud Providers</div>
+          <div class="providers-group-grid">
+            <div class="provider-card">
+              <div class="provider-icon dropbox">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8l-9-6-9 6 9 6 9-6zM3 8v8l9 6 9-6V8L12 14 3 8z"/></svg>
+              </div>
+              <div class="provider-meta"><span class="provider-name">Dropbox</span><span class="provider-type">Cloud</span></div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-icon onedrive">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.5 19a5.5 5.5 0 0 0 0-11c-.13 0-.25.01-.38.02A7 7 0 1 0 5 13.5c0 .12.01.24.02.36A4.5 4.5 0 0 0 6.5 23h11a5.5 5.5 0 0 0 0-11"/></svg>
+              </div>
+              <div class="provider-meta"><span class="provider-name">OneDrive</span><span class="provider-type">Cloud</span></div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-icon gdrive">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 19h20L12 2z"/></svg>
+              </div>
+              <div class="provider-meta"><span class="provider-name">Google Drive</span><span class="provider-type">Cloud</span></div>
+            </div>
+            <div class="provider-card">
+              <div class="provider-icon webdav">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+              </div>
+              <div class="provider-meta"><span class="provider-name">WebDAV</span><span class="provider-type">Cloud</span></div>
+            </div>
           </div>
-          <span>GitLab</span>
-        </div>
-        <div class="provider-card">
-          <div class="provider-icon bitbucket">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 3h16l2 11-10 7-10-7 2-11z"/><path d="M12 3v18"/></svg>
-          </div>
-          <span>Bitbucket</span>
-        </div>
-        <div class="provider-card">
-          <div class="provider-icon dropbox">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 8l-9-6-9 6 9 6 9-6zM3 8v8l9 6 9-6V8L12 14 3 8z"/></svg>
-          </div>
-          <span>Dropbox</span>
-        </div>
-        <div class="provider-card">
-          <div class="provider-icon onedrive">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17.5 19a5.5 5.5 0 0 0 0-11c-.13 0-.25.01-.38.02A7 7 0 1 0 5 13.5c0 .12.01.24.02.36A4.5 4.5 0 0 0 6.5 23h11a5.5 5.5 0 0 0 0-11"/></svg>
-          </div>
-          <span>OneDrive</span>
-        </div>
-        <div class="provider-card">
-          <div class="provider-icon gdrive">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2L2 19h20L12 2z"/></svg>
-          </div>
-          <span>Google Drive</span>
-        </div>
-        <div class="provider-card">
-          <div class="provider-icon webdav">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-          </div>
-          <span>WebDAV</span>
-        </div>
-        <div class="provider-card">
-          <div class="provider-icon git">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
-          </div>
-          <span>Custom Git</span>
         </div>
       </div>
     </div>
@@ -284,7 +295,10 @@
       </div>
       <div class="steps">
         <div class="step">
-          <div class="step-number">01</div>
+          <div class="step-num-circle">1</div>
+          <div class="step-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </div>
           <div class="step-content">
             <h3>Add your vault</h3>
             <p>Open Obsync and click "Add Vault". Browse to your Obsidian vault folder — that's it. Obsync initialises a local git repo automatically.</p>
@@ -292,7 +306,10 @@
         </div>
         <div class="step-connector"></div>
         <div class="step">
-          <div class="step-number">02</div>
+          <div class="step-num-circle">2</div>
+          <div class="step-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </div>
           <div class="step-content">
             <h3>Connect a provider</h3>
             <p>Choose your cloud provider, paste your token or sign in with OAuth, and hit Save. Obsync validates your credentials before saving anything.</p>
@@ -300,7 +317,10 @@
         </div>
         <div class="step-connector"></div>
         <div class="step">
-          <div class="step-number">03</div>
+          <div class="step-num-circle">3</div>
+          <div class="step-icon-wrap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+          </div>
           <div class="step-content">
             <h3>Push &amp; relax</h3>
             <p>Hit Push to upload your vault. Enable Auto-Sync and Obsync handles everything from here — watching for changes and syncing in the background.</p>
@@ -319,27 +339,27 @@
       </div>
       <div class="faq-list">
         <div class="faq-item">
-          <button class="faq-q" aria-expanded="false">Is Obsync really free?</button>
+          <button class="faq-q" aria-expanded="false">Is Obsync really free?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg></button>
           <div class="faq-a"><p>Yes, completely. Obsync is open source and free forever. There's no premium tier, no usage limits, and no telemetry.</p></div>
         </div>
         <div class="faq-item">
-          <button class="faq-q" aria-expanded="false">Does Obsync store my notes or tokens anywhere?</button>
+          <button class="faq-q" aria-expanded="false">Does Obsync store my notes or tokens anywhere?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg></button>
           <div class="faq-a"><p>No. Everything stays on your machine. Tokens are encrypted with AES using Electron's OS-level safeStorage API. Your notes go directly from your computer to your chosen cloud provider — Obsync's servers don't exist.</p></div>
         </div>
         <div class="faq-item">
-          <button class="faq-q" aria-expanded="false">What happens if two devices edit the same file?</button>
+          <button class="faq-q" aria-expanded="false">What happens if two devices edit the same file?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg></button>
           <div class="faq-a"><p>Obsync detects the conflict using git's merge detection and shows you a diff. You can keep your local version, the cloud version, or both — with a live preview of the differences.</p></div>
         </div>
         <div class="faq-item">
-          <button class="faq-q" aria-expanded="false">Does it sync .obsidian settings and plugins?</button>
+          <button class="faq-q" aria-expanded="false">Does it sync .obsidian settings and plugins?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg></button>
           <div class="faq-a"><p>Yes, most of it. Obsync syncs your plugins, themes, snippets, and config files. It intentionally skips workspace state, cache, and trash — the transient files that cause conflicts between devices.</p></div>
         </div>
         <div class="faq-item">
-          <button class="faq-q" aria-expanded="false">Can I use it with multiple vaults?</button>
+          <button class="faq-q" aria-expanded="false">Can I use it with multiple vaults?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg></button>
           <div class="faq-a"><p>Absolutely. Obsync supports unlimited vaults, each with its own cloud provider and auto-sync configuration. The dashboard gives you a bird's-eye view of all of them.</p></div>
         </div>
         <div class="faq-item">
-          <button class="faq-q" aria-expanded="false">When is Linux support coming?</button>
+          <button class="faq-q" aria-expanded="false">When is Linux support coming?<svg class="faq-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="6 9 12 15 18 9"/></svg></button>
           <div class="faq-a"><p>Linux support is actively being worked on and will be available in an upcoming release. You can follow progress on <a href="https://github.com/MbarkT3STO/Obsync-App" target="_blank" rel="noopener">GitHub</a> or build from source in the meantime — Node.js 16+ and Git are all you need.</p></div>
         </div>
       </div>
@@ -405,7 +425,7 @@
   <footer class="footer">
     <div class="container footer-inner">
       <div class="footer-brand">
-        <img src="../Obsync Desktop/assets/logo.png" alt="Obsync" class="footer-logo" />
+        <img src="assets/logo.png" alt="Obsync" class="footer-logo" />
         <span>Obsync</span>
       </div>
       <p class="footer-copy">Made with ♥ for the Obsidian community. MIT License.</p>
@@ -415,6 +435,7 @@
         <a href="#faq">FAQ</a>
       </div>
     </div>
+    <div class="container footer-bottom">© 2026 Obsync · MIT License</div>
   </footer>
 
   <script src="script.js"></script>

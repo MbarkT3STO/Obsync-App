@@ -1,0 +1,216 @@
+/* ═══════════════════════════════════════════════════════════════════
+   OBSYNC — Shared Design System Tokens
+   Identical to app's design-system.css core tokens.
+   Landing-specific scale additions at the bottom.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ── Layer system ─────────────────────────────────────────────── */
+  --layer-0: #08080D;
+  --layer-1: #0F0F17;
+  --layer-2: #16161F;
+  --layer-3: #1E1E2A;
+  --layer-4: #252534;
+
+  /* ── Accent ───────────────────────────────────────────────────── */
+  --accent:       #7C6AFE;
+  --accent-light: #A78BFA;
+  --accent-glow:  rgba(124,106,254,0.15);
+  --accent-grad:  linear-gradient(135deg, #7C6AFE 0%, #6B5AE0 100%);
+
+  /* ── Semantic ─────────────────────────────────────────────────── */
+  --success: #34C759;
+  --warning: #FF9F0A;
+  --danger:  #FF453A;
+  --info:    #0A84FF;
+
+  --success-dim: rgba(52,199,89,0.10);
+  --warning-dim: rgba(255,159,10,0.12);
+  --danger-dim:  rgba(255,69,58,0.12);
+
+  /* ── Text hierarchy ───────────────────────────────────────────── */
+  --text-1: rgba(255,255,255,0.92);
+  --text-2: rgba(255,255,255,0.55);
+  --text-3: rgba(255,255,255,0.30);
+  --text-4: rgba(255,255,255,0.15);
+
+  /* ── Borders ──────────────────────────────────────────────────── */
+  --border-subtle:   rgba(255,255,255,0.05);
+  --border-default:  rgba(255,255,255,0.08);
+  --border-emphasis: rgba(255,255,255,0.12);
+  --border-accent:   rgba(124,106,254,0.35);
+
+  /* ── Provider brand colors ────────────────────────────────────── */
+  --github-bg:     rgba(230,237,243,0.08);
+  --github-color:  #E6EDF3;
+  --gitlab-bg:     rgba(252,109,38,0.10);
+  --gitlab-color:  #FC6D26;
+  --gdrive-bg:     rgba(234,67,53,0.10);
+  --gdrive-color:  #EA4335;
+  --onedrive-bg:   rgba(0,120,212,0.10);
+  --onedrive-color:#0078D4;
+  --dropbox-bg:    rgba(0,97,255,0.10);
+  --dropbox-color: #0061FF;
+  --bitbucket-bg:  rgba(0,82,204,0.10);
+  --bitbucket-color:#0052CC;
+  --webdav-bg:     rgba(124,106,254,0.10);
+  --webdav-color:  #A78BFA;
+  --git-bg:        rgba(240,80,50,0.10);
+  --git-color:     #F05032;
+
+  /* ── Border radius ────────────────────────────────────────────── */
+  --r-xs:   4px;
+  --r-sm:   6px;
+  --r-md:   8px;
+  --r-lg:   12px;
+  --r-xl:   14px;
+  --r-2xl:  20px;
+  --r-pill: 9999px;
+
+  /* ── Easing ───────────────────────────────────────────────────── */
+  --ease-spring: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-sharp:  cubic-bezier(0.4, 0, 0.6, 1);
+
+  /* ── Typography ───────────────────────────────────────────────── */
+  --font: -apple-system, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* App scale */
+  --text-xs:   11px;
+  --text-sm:   12px;
+  --text-base: 13px;
+  --text-md:   15px;
+  --text-lg:   17px;
+  --text-xl:   22px;
+
+  /* Landing-specific scale */
+  --text-hero:    56px;
+  --text-section: 32px;
+  --text-sub:     18px;
+
+  /* ── Shadows ──────────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+  --shadow-xl: 0 16px 48px rgba(0,0,0,0.7);
+  --shadow-2xl:0 40px 80px rgba(0,0,0,0.7);
+
+  /* ── Glass ────────────────────────────────────────────────────── */
+  --glass: blur(20px) saturate(180%);
+}
+
+/* ── Keyframes ────────────────────────────────────────────────────────── */
+@keyframes spin    { to { transform: rotate(360deg); } }
+@keyframes pulse   { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+@keyframes fadeIn  { from { opacity:0; } to { opacity:1; } }
+@keyframes float   { 0%,100% { transform:translateY(0); } 50% { transform:translateY(-8px); } }
+@keyframes shimmer { from { background-position:-200% center; } to { background-position:200% center; } }
+@keyframes revealUp {
+  from { opacity:0; transform:translateY(16px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+/* ── Scrollbars ───────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width:6px; height:6px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.08); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background:rgba(255,255,255,0.15); }
+
+/* ── Shared button components ─────────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 22px;
+  border-radius: var(--r-md);
+  background: var(--accent-grad);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+  border: 0.5px solid rgba(255,255,255,0.12);
+  box-shadow: 0 1px 8px rgba(124,106,254,0.35);
+  cursor: pointer;
+  text-decoration: none;
+  user-select: none;
+  transition: all 0.15s var(--ease-spring);
+  white-space: nowrap;
+}
+.btn-primary:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 20px rgba(124,106,254,0.45);
+}
+.btn-primary:active { transform: scale(0.97); filter: brightness(1); }
+.btn-primary svg { width: 17px; height: 17px; stroke-width: 1.5; flex-shrink: 0; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 22px;
+  border-radius: var(--r-md);
+  background: rgba(255,255,255,0.06);
+  color: var(--text-2);
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
+  border: 0.5px solid var(--border-default);
+  cursor: pointer;
+  text-decoration: none;
+  user-select: none;
+  transition: all 0.15s var(--ease-spring);
+  white-space: nowrap;
+}
+.btn-ghost:hover {
+  background: rgba(255,255,255,0.10);
+  color: var(--text-1);
+  border-color: var(--border-emphasis);
+}
+.btn-ghost:active { transform: scale(0.97); }
+.btn-ghost svg { width: 17px; height: 17px; stroke-width: 1.5; flex-shrink: 0; }
+
+/* ── Shared badge components ──────────────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 12px;
+  border-radius: var(--r-pill);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  user-select: none;
+}
+.badge-accent {
+  background: var(--accent-glow);
+  border: 0.5px solid var(--border-accent);
+  color: var(--accent-light);
+}
+.badge-success { background: var(--success-dim); color: var(--success); }
+.badge-warning  { background: var(--warning-dim); color: var(--warning); }
+
+/* ── Shared card ──────────────────────────────────────────────────────── */
+.card {
+  background: rgba(255,255,255,0.04);
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--r-xl);
+  padding: 24px;
+  transition: all 0.2s var(--ease-spring);
+  will-change: transform;
+}
+.card:hover {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(124,106,254,0.30);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
